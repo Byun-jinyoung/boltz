@@ -1,9 +1,11 @@
-import os
+import os, sys
 import pickle
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal, Optional
+
+from .logger_config import MyLogger
 
 import click
 import torch
@@ -27,7 +29,7 @@ CCD_URL = "https://huggingface.co/boltz-community/boltz-1/resolve/main/ccd.pkl"
 MODEL_URL = (
     "https://huggingface.co/boltz-community/boltz-1/resolve/main/boltz1_conf.ckpt"
 )
-
+logger = MyLogger
 
 @dataclass
 class BoltzProcessedInput:
@@ -631,7 +633,10 @@ def predict(
     if accelerator == "cpu":
         msg = "Running on CPU, this will be slow. Consider using a GPU."
         click.echo(msg)
-
+    elif accelerator.lower() == 'gpu':
+        msg = "Running on GPU."
+    click.echo(msg)
+    
     # Set no grad
     torch.set_grad_enabled(False)
 
@@ -679,6 +684,7 @@ def predict(
     click.echo(msg)
 
     # Process inputs
+    logger.info('Load fasta/yaml config file and read/generate MSA with "process_inputs" function.')
     ccd_path = cache / "ccd.pkl"
     process_inputs(
         data=data,
@@ -690,6 +696,7 @@ def predict(
     )
 
     # Load processed data
+    logger.info('Load processed data and crate data module (Dataset, DataLoader)')
     processed_dir = out_dir / "processed"
     processed = BoltzProcessedInput(
         manifest=Manifest.load(processed_dir / "manifest.json"),
@@ -732,6 +739,7 @@ def predict(
         steering_args.fk_steering = False
         steering_args.guidance_update = False
 
+    click.echo("Loading model from check point.")
     model_module: Boltz1 = Boltz1.load_from_checkpoint(
         checkpoint,
         strict=True,

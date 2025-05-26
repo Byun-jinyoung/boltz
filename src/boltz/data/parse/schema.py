@@ -1,3 +1,6 @@
+import os, sys 
+import numpy as np
+
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Optional
@@ -8,6 +11,9 @@ from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdchem import BondStereo, Conformer, Mol
 from rdkit.Chem.rdDistGeom import GetMoleculeBoundsMatrix
+
+from ...logger_config import MyLogger
+logger = MyLogger
 
 from boltz.data import const
 from boltz.data.types import (
@@ -264,6 +270,7 @@ def get_conformer(mol: Mol) -> Conformer:
     raise ValueError(msg)
 
 
+# for boltz-1x
 def compute_geometry_constraints(mol: Mol, idx_map):
     if mol.GetNumAtoms() <= 1:
         return []
@@ -296,7 +303,7 @@ def compute_geometry_constraints(mol: Mol, idx_map):
             constraints.append(constraint)
     return constraints
 
-
+# for boltz-1x
 def compute_chiral_atom_constraints(mol, idx_map):
     constraints = []
     if all([atom.HasProp("_CIPRank") for atom in mol.GetAtoms()]):
@@ -344,7 +351,7 @@ def compute_chiral_atom_constraints(mol, idx_map):
                         )
     return constraints
 
-
+# for boltz-1x
 def compute_stereo_bond_constraints(mol, idx_map):
     constraints = []
     if all([atom.HasProp("_CIPRank") for atom in mol.GetAtoms()]):
@@ -407,7 +414,7 @@ def compute_stereo_bond_constraints(mol, idx_map):
                         )
     return constraints
 
-
+# for boltz-1x
 def compute_flatness_constraints(mol, idx_map):
     planar_double_bond_smarts = Chem.MolFromSmarts("[C;X3;^2](*)(*)=[C;X3;^2](*)(*)")
     aromatic_ring_5_smarts = Chem.MolFromSmarts("[ar5^2]1[ar5^2][ar5^2][ar5^2][ar5^2]1")
@@ -599,6 +606,7 @@ def parse_polymer(
     chain_type: str,
     components: dict[str, Mol],
     cyclic: bool,
+    custom_template: Optional[Mol] = None,
 ) -> Optional[ParsedChain]:
     """Process a sequence into a chain object.
 
@@ -615,7 +623,7 @@ def parse_polymer(
     entity_type : str
         The entity type.
     components : dict[str, Mol]
-        The preprocessed PDB components dictionary.
+        The preprocessed PDB components dictionary. {'component_name': RDkit Mol}
 
     Returns
     -------
@@ -628,8 +636,18 @@ def parse_polymer(
         If the alignment fails.
 
     """
+    # [NOTE] code modification
+    # if entity_type == 'protein' and custom_template is not None: 
+    #     atom_dict = read_mmcif_atoms(custom_template)
+    #     # [TODO] mapping must be input in yaml file if custom_template like AF3    
+    
+    # protein: {'CYS', 'TRP', '<pad>', 'DG', 'PHE', 'ASP', 'VAL', 'ASN', 'ILE', 'U', 'GLN', 'DN', '-', 'LYS', 'ALA', 'HIS', 'C', 'DT', 'PRO', 'GLU', 'A', 'G', 'DA', 'UNK', 'DC', 'THR', 'N', 'ARG', 'TYR', 'SER', 'MET', 'LEU', 'GLY'}
+    # dna: ...
+    # rna: ...
     ref_res = set(const.tokens)
     unk_chirality = const.chirality_type_ids[const.unk_chirality_type]
+
+    print(components)
 
     # Get coordinates and masks
     parsed = []
@@ -640,6 +658,8 @@ def parse_polymer(
 
         # Handle non-standard residues
         if res_corrected not in ref_res:
+            print(f'[INFO ] handle non-standard residue {res_corrected}')
+            print(f'[NOTE ] S-S bond는 polymer이지만 non-standard로 처리')
             ref_mol = components[res_corrected]
             residue = parse_ccd_residue(
                 name=res_corrected,
@@ -654,7 +674,7 @@ def parse_polymer(
         ref_mol = AllChem.RemoveHs(ref_mol, sanitize=False)
         ref_conformer = get_conformer(ref_mol)
 
-        # Only use reference atoms set in constants
+        # Only use reference atoms set in constants, {protein atom name: rdkit mol}
         ref_name_to_atom = {a.GetProp("name"): a for a in ref_mol.GetAtoms()}
         ref_atoms = [ref_name_to_atom[a] for a in const.ref_atoms[res_corrected]]
 
@@ -665,6 +685,7 @@ def parse_polymer(
             # Get atom name
             atom_name = ref_atom.GetProp("name")
             idx = ref_atom.GetIdx()
+            # print(res_name, res_idx, atom_name, idx)
 
             # Get conformer coordinates
             ref_coords = ref_conformer.GetAtomPosition(idx)
@@ -672,7 +693,14 @@ def parse_polymer(
 
             # Set 0 coordinate
             atom_is_present = True
-            coords = (0, 0, 0)
+            coords = (0, 0, 0) # [TODO] ParseAtom coords는 나중에 어디에 쓰이는지 확인 (5.26)
+
+            # [TODO]
+            # if entity_type == 'protein' and custom_template is not None: # [NOTE] code modification
+            #     tmpl_coord = atom_dict[f'{res_idx}:{res_name}'].get(atom_name, None)
+            #     #print(res_idx, res_name, atom_name, tmpl_coord)
+            #     ref_coords = tmpl_coord if atom_name in {'CA', 'C', 'N'} else ref_coords
+            #     #coords = tmpl_coord if atom_name in {'CA', 'C', 'O', 'N'} else coords
 
             # Add atom to list
             atoms.append(
@@ -781,8 +809,11 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     blocker = rdBase.BlockLogs()  # noqa: F841
 
     # First group items that have the same type, sequence and modifications
-    items_to_group = {}
+    print('[INFO ] parse_boltz_schema: Makes items into group')
+    items_to_group = {} # {(entity_type, seq): [item, item, ...]}
     for item in schema["sequences"]:
+        print(f'  INFO: {item}')
+        
         # Get entity type
         entity_type = next(iter(item.keys())).lower()
         if entity_type not in {"protein", "dna", "rna", "ligand"}:
@@ -799,9 +830,17 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                 seq = str(item[entity_type]["smiles"])
             else:
                 seq = str(item[entity_type]["ccd"])
+        
+        # # Get custom template structure only for protein entity
+        # if entity_type == 'protein' and item[entity_type].get('template', False):
+        #     print(f"   > Boltz1 uses {item[entity_type]['template']} as custom_template.")                
+                
         items_to_group.setdefault((entity_type, seq), []).append(item)
-
+    print(items_to_group)
+    sys.exit()
+    
     # Go through entities and parse them
+    logger.info('Parse entities')
     chains: dict[str, ParsedChain] = {}
     chain_to_msa: dict[str, str] = {}
     entity_to_seq: dict[str, str] = {}
