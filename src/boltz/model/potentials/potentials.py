@@ -219,7 +219,7 @@ class MinDistancePotential(FlatBottomPotential, DistancePotential): # code modif
         min_distance_values = feats['min_distance_values'][0]
         lower_bounds = min_distance_values 
         upper_bounds = None
-        k = torch.ones_like(lower_bounds) * 100
+        k = torch.ones_like(lower_bounds) * 1
 
         return pair_index, (k, lower_bounds, upper_bounds), None
         
@@ -362,9 +362,9 @@ def get_potentials():
         ),
         MinDistancePotential( # code modification
             parameters={
-                'guidance_interval': 5,
+                'guidance_interval': 1,
                 'guidance_weight': 0.15,
-                'resampling_weight': 2.0,
+                'resampling_weight': 10,
                 'buffer': 0.5,
             }
         ),

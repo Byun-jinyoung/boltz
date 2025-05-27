@@ -12,9 +12,6 @@ from rdkit.Chem import AllChem
 from rdkit.Chem.rdchem import BondStereo, Conformer, Mol
 from rdkit.Chem.rdDistGeom import GetMoleculeBoundsMatrix
 
-from ...logger_config import MyLogger
-logger = MyLogger
-
 from boltz.data import const
 from boltz.data.types import (
     Atom,
@@ -38,6 +35,14 @@ from boltz.data.types import (
     StructureInfo,
     Target,
 )
+
+# ========================== #
+# -- My Code Modification -- #
+# ========================== #
+from boltz.data.parse.template import TemplateConstraintGenerator
+
+from ...logger_config import MyLogger
+logger = MyLogger
 
 ####################################################################################################
 # DATACLASSES
@@ -648,7 +653,7 @@ def parse_polymer(
     ref_res = set(const.tokens)
     unk_chirality = const.chirality_type_ids[const.unk_chirality_type]
 
-    print(f'[INFO ] parse_polymer: Get coordinates and masks')
+    print(f' INFO: parse_polymer: Get coordinates and masks')
     parsed = []
     for res_idx, res_name in enumerate(sequence):
         # Check if modified residue
@@ -1193,15 +1198,63 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
 
             res_idx += 1
 
+    
+    # Generate template-based constraints before parsing explicit constraints (code modification)
+    logger.info('Generate template-based constraints') 
+    template_constraints = []
+    template_info_by_chain = {}  # Store template info for each chain
+    
+    print('[INFO ] Collect template information from schema (yaml config)')
+    for item in schema.get("sequences", []):
+        entity_type = next(iter(item.keys())).lower()
+        if entity_type == "protein" and "template" in item[entity_type]:
+            template_info = item[entity_type]["template"]
+            chain_ids = item[entity_type]["id"]
+            if isinstance(chain_ids, str):
+                chain_ids = [chain_ids]
+            
+            for chain_id in chain_ids:
+                template_info_by_chain[chain_id] = {
+                    "structure_path": template_info["structure"],
+                    "chain_id": template_info["chain_id"],
+                    "sequence": item[entity_type]["sequence"]
+                }
+    
+    # Generate template constraints for each chain with template info
+    if template_info_by_chain:
+        try:
+            
+            generator = TemplateConstraintGenerator()
+            
+            for chain_id, info in template_info_by_chain.items():
+                print(f"[INFO ] Generating template constraints for chain {chain_id}")
+                constraints = generator.generate_template_constraints(
+                    query_sequence=info["sequence"],
+                    template_structure=info["structure_path"],
+                    template_chain_id=info["chain_id"],
+                    query_chain_id=chain_id
+                )
+                template_constraints.extend(constraints)
+                
+        except Exception as e:
+            print(f"[WARNING] Failed to generate template constraints: {e}")
+    # print(template_constraints)
+    # sys.exit(0)
+    
     # Parse constraints
     logger.info('Parse constraints')
     connections = []
     min_distances = [] # code modification
     pocket_binders = []
     pocket_residues = []
-    constraints = schema.get("constraints", [])
-    for constraint in constraints:
-        if "bond" in constraint: # connectd bond restraint
+    
+    ## Combine template constraints with explicit constraints (code modification)
+    # constraints = schema.get("constraints", [])
+    all_constraints = template_constraints + schema.get("constraints", [])
+    
+    for constraint in all_constraints:
+        # connectd bond restraint
+        if "bond" in constraint: 
             if "atom1" not in constraint["bond"] or "atom2" not in constraint["bond"]:
                 msg = "Bond constraint was not properly specified"
                 raise ValueError(msg)
@@ -1212,8 +1265,9 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed            
             c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed
             connections.append((c1, c2, r1, r2, a1, a2))
-        elif "min_distance" in constraint: # code modification
-            # minimum distance constraint between two atoms
+        
+        # minimum distance constraint between two atoms (code modification)
+        elif "min_distance" in constraint: 
             if (
                 "atom1" not in constraint["min_distance"] 
                 or "atom2" not in constraint["min_distance"]
@@ -1226,11 +1280,14 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             c1, r1, a1 = tuple(constraint["min_distance"]["atom1"])
             c2, r2, a2 = tuple(constraint["min_distance"]["atom2"])
             distance = float(constraint["min_distance"]["distance"])
+            # print(c1, r1, a1, c2, r2, a2, distance)
             
             # Convert to internal indices (1-indexed to 0-indexed)
             c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed to 0-indexed
-            c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed to 0-indexed
+            c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed to 0-indexed            
             min_distances.append((c1, c2, r1, r2, a1, a2, distance))
+        
+        # pocket constraint
         elif "pocket" in constraint:
             if (
                 "binder" not in constraint["pocket"]
