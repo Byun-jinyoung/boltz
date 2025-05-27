@@ -1106,6 +1106,18 @@ def process_chain_feature_constraints(
         connected_chain_index = torch.empty((2, 0), dtype=torch.long)
         connected_atom_index = torch.empty((2, 0), dtype=torch.long)
 
+    # Process min_distance constraints, (code modification)
+    if structure.min_distances.shape[0] > 0:
+        min_distance_atom_index, min_distance_values = [], []
+        for min_dist in structure.min_distances:
+            min_distance_atom_index.append([min_dist["atom_1"], min_dist["atom_2"]])
+            min_distance_values.append(min_dist["distance"])
+        min_distance_atom_index = torch.tensor(min_distance_atom_index, dtype=torch.long).T
+        min_distance_values = torch.tensor(min_distance_values, dtype=torch.float)
+    else:
+        min_distance_atom_index = torch.empty((2, 0), dtype=torch.long)
+        min_distance_values = torch.empty((0,), dtype=torch.float)
+
     symmetric_chain_index = []
     for i, chain_i in enumerate(structure.chains):
         for j, chain_j in enumerate(structure.chains):
@@ -1120,6 +1132,8 @@ def process_chain_feature_constraints(
     return {
         "connected_chain_index": connected_chain_index,
         "connected_atom_index": connected_atom_index,
+        "min_distance_atom_index": min_distance_atom_index, # code modification
+        "min_distance_values": min_distance_values, # code modification
         "symmetric_chain_index": symmetric_chain_index,
     }
 

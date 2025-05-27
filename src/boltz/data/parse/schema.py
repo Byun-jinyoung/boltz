@@ -25,6 +25,7 @@ from boltz.data.types import (
     Connection,
     InferenceOptions,
     Interface,
+    MinDistance, # code modification
     PlanarBondConstraint,
     PlanarRing5Constraint,
     PlanarRing6Constraint,
@@ -647,9 +648,7 @@ def parse_polymer(
     ref_res = set(const.tokens)
     unk_chirality = const.chirality_type_ids[const.unk_chirality_type]
 
-    print(components)
-
-    # Get coordinates and masks
+    print(f'[INFO ] parse_polymer: Get coordinates and masks')
     parsed = []
     for res_idx, res_name in enumerate(sequence):
         # Check if modified residue
@@ -809,7 +808,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     blocker = rdBase.BlockLogs()  # noqa: F841
 
     # First group items that have the same type, sequence and modifications
-    print('[INFO ] parse_boltz_schema: Makes items into group')
+    logger.info('Makes items into group')
     items_to_group = {} # {(entity_type, seq): [item, item, ...]}
     for item in schema["sequences"]:
         print(f'  INFO: {item}')
@@ -836,9 +835,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
         #     print(f"   > Boltz1 uses {item[entity_type]['template']} as custom_template.")                
                 
         items_to_group.setdefault((entity_type, seq), []).append(item)
-    print(items_to_group)
-    sys.exit()
-    
+
     # Go through entities and parse them
     logger.info('Parse entities')
     chains: dict[str, ParsedChain] = {}
@@ -847,10 +844,11 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     is_msa_custom = False
     is_msa_auto = False
     for entity_id, items in enumerate(items_to_group.values()):
+        print(f'[INFO ] Parse entity {entity_id}')
         # Get entity type and sequence
         entity_type = next(iter(items[0].keys())).lower()
 
-        # Ensure all the items share the same msa
+        # Ensure all the items share the same msa        
         msa = -1
         if entity_type == "protein":
             # Get the msa, default to 0, meaning auto-generated
@@ -883,8 +881,11 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             elif msa == 0:
                 is_msa_auto = True
 
-        # Parse a polymer
+        # Parse a polymer        
         if entity_type in {"protein", "dna", "rna"}:
+            print(f'  INFO: parse a polymer {entity_type}')
+            # custom_template = None
+            
             # Get token map
             if entity_type == "rna":
                 token_map = const.rna_letter_to_token
@@ -897,6 +898,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                 raise ValueError(msg)
 
             # Get polymer info
+            # chain_types = ["PROTEIN","DNA","RNA","NONPOLYMER"]
             chain_type = const.chain_type_ids[entity_type.upper()]
             unk_token = const.unk_token[entity_type.upper()]
 
@@ -923,9 +925,11 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                 components=ccd,
                 cyclic=cyclic,
             )
+            #print(parsed_chain)
 
         # Parse a non-polymer
         elif (entity_type == "ligand") and "ccd" in (items[0][entity_type]):
+            print(f'  INFO: parse a non-polymer {entity_type}')
             seq = items[0][entity_type]["ccd"]
             if isinstance(seq, str):
                 seq = [seq]
@@ -957,6 +961,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             ), "Cyclic flag is not supported for ligands"
 
         elif (entity_type == "ligand") and ("smiles" in items[0][entity_type]):
+            print(f'  INFO: parse a non-polymer {entity_type}')
             seq = items[0][entity_type]["smiles"]
             mol = AllChem.MolFromSmiles(seq)
             mol = AllChem.AddHs(mol)
@@ -1006,7 +1011,8 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             for chain_name in ids:
                 chains[chain_name] = parsed_chain
                 chain_to_msa[chain_name] = msa
-
+    
+    
     # Check if msa is custom or auto
     if is_msa_custom and is_msa_auto:
         msg = "Cannot mix custom and auto-generated MSAs in the same input!"
@@ -1017,6 +1023,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
         msg = "No chains parsed!"
         raise ValueError(msg)
 
+    print('[INFO ] Create structure information mapping to atom_idx')
     # Create tables
     atom_data = []
     bond_data = []
@@ -1040,6 +1047,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     # Keep a mapping of (chain_name, residue_idx, atom_name) to atom_idx
     atom_idx_map = {}
 
+    # chains: {chain_name: ParsedChain, ...}
     for asym_id, (chain_name, chain) in enumerate(chains.items()):
         # Compute number of atoms and residues
         res_num = len(chain.residues)
@@ -1082,7 +1090,8 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                     res.is_present,
                 )
             )
-
+            
+            # Parsed된 ligand residue 단위에서만 사용됨
             if res.rdkit_bounds_constraints is not None:
                 for constraint in res.rdkit_bounds_constraints:
                     rdkit_bounds_constraint_data.append(  # noqa: PERF401
@@ -1093,8 +1102,8 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                             ),
                             constraint.is_bond,
                             constraint.is_angle,
-                            constraint.upper_bound,
-                            constraint.lower_bound,
+                            constraint.upper_bound, # ligand residue 단위에서만 사용됨
+                            constraint.lower_bound, # ligand residue 단위에서만 사용됨
                         )
                     )
             if res.chiral_atom_constraints is not None:
@@ -1108,7 +1117,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                             constraint.is_reference,
                             constraint.is_r,
                         )
-                    )
+                    )                    
             if res.stereo_bond_constraints is not None:
                 for constraint in res.stereo_bond_constraints:
                     stereo_bond_constraint_data.append(  # noqa: PERF401
@@ -1151,8 +1160,11 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                             ),
                         )
                     )
-
-            for bond in res.bonds:
+            
+            # [TODO] bond_data for polymer
+            # TO do implementation!
+            
+            for bond in res.bonds: # polymer 단위에서는 안 됨, atom-level
                 atom_1 = atom_idx + bond.atom_1
                 atom_2 = atom_idx + bond.atom_2
                 bond_data.append((atom_1, atom_2, bond.type))
@@ -1182,27 +1194,49 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             res_idx += 1
 
     # Parse constraints
+    logger.info('Parse constraints')
     connections = []
+    min_distances = [] # code modification
     pocket_binders = []
     pocket_residues = []
     constraints = schema.get("constraints", [])
     for constraint in constraints:
-        if "bond" in constraint:
+        if "bond" in constraint: # connectd bond restraint
             if "atom1" not in constraint["bond"] or "atom2" not in constraint["bond"]:
-                msg = f"Bond constraint was not properly specified"
+                msg = "Bond constraint was not properly specified"
                 raise ValueError(msg)
 
+            # chain_name, residue_idx, atom_name
             c1, r1, a1 = tuple(constraint["bond"]["atom1"])
             c2, r2, a2 = tuple(constraint["bond"]["atom2"])
-            c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed
+            c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed            
             c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed
             connections.append((c1, c2, r1, r2, a1, a2))
+        elif "min_distance" in constraint: # code modification
+            # minimum distance constraint between two atoms
+            if (
+                "atom1" not in constraint["min_distance"] 
+                or "atom2" not in constraint["min_distance"]
+                or "distance" not in constraint["min_distance"]
+            ):
+                msg = "Min distance constraint was not properly specified"
+                raise ValueError(msg)
+
+            # chain_name, residue_idx, atom_name
+            c1, r1, a1 = tuple(constraint["min_distance"]["atom1"])
+            c2, r2, a2 = tuple(constraint["min_distance"]["atom2"])
+            distance = float(constraint["min_distance"]["distance"])
+            
+            # Convert to internal indices (1-indexed to 0-indexed)
+            c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed to 0-indexed
+            c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed to 0-indexed
+            min_distances.append((c1, c2, r1, r2, a1, a2, distance))
         elif "pocket" in constraint:
             if (
                 "binder" not in constraint["pocket"]
                 or "contacts" not in constraint["pocket"]
             ):
-                msg = f"Pocket constraint was not properly specified"
+                msg = "Pocket constraint was not properly specified"
                 raise ValueError(msg)
 
             binder = constraint["pocket"]["binder"]
@@ -1210,7 +1244,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
 
             if len(pocket_binders) > 0:
                 if pocket_binders[-1] != chain_to_idx[binder]:
-                    msg = f"Only one pocket binders is supported!"
+                    msg = "Only one pocket binders is supported!"
                     raise ValueError(msg)
                 else:
                     pocket_residues[-1].extend(
@@ -1219,7 +1253,6 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                             for chain_name, residue_index in contacts
                         ]
                     )
-
             else:
                 pocket_binders.append(chain_to_idx[binder])
                 pocket_residues.extend(
@@ -1239,6 +1272,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     chains = np.array(chain_data, dtype=Chain)
     interfaces = np.array([], dtype=Interface)
     connections = np.array(connections, dtype=Connection)
+    min_distances = np.array(min_distances, dtype=MinDistance) # code modification
     mask = np.ones(len(chain_data), dtype=bool)
     rdkit_bounds_constraints = np.array(
         rdkit_bounds_constraint_data, dtype=RDKitBoundsConstraint
@@ -1261,10 +1295,11 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
 
     data = Structure(
         atoms=atoms,
-        bonds=bonds,
+        bonds=bonds, # atom-level bond for each residue (not residue-level)
         residues=residues,
         chains=chains,
-        connections=connections,
+        connections=connections, #
+        min_distances=min_distances, # code modification
         interfaces=interfaces,
         mask=mask,
     )

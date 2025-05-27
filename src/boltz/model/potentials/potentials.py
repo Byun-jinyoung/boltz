@@ -212,6 +212,16 @@ class ConnectionsPotential(FlatBottomPotential, DistancePotential):
         k = torch.ones_like(upper_bounds)
 
         return pair_index, (k, lower_bounds, upper_bounds), None
+
+class MinDistancePotential(FlatBottomPotential, DistancePotential): # code modification
+    def compute_args(self, feats, parameters):
+        pair_index = feats['min_distance_atom_index'][0]
+        min_distance_values = feats['min_distance_values'][0]
+        lower_bounds = min_distance_values 
+        upper_bounds = None
+        k = torch.ones_like(lower_bounds) * 100
+
+        return pair_index, (k, lower_bounds, upper_bounds), None
         
 class VDWOverlapPotential(FlatBottomPotential, DistancePotential):
     def compute_args(self, feats, parameters):
@@ -348,6 +358,14 @@ def get_potentials():
                 'guidance_weight': 0.15,
                 'resampling_weight': 1.0,
                 'buffer': 2.0,
+            }
+        ),
+        MinDistancePotential( # code modification
+            parameters={
+                'guidance_interval': 5,
+                'guidance_weight': 0.15,
+                'resampling_weight': 2.0,
+                'buffer': 0.5,
             }
         ),
         PoseBustersPotential(

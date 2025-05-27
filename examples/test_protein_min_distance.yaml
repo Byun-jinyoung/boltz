@@ -1,0 +1,12 @@
+version: 1
+sequences:
+  - protein:
+      id: A
+      sequence: QLEDSEVEAVAKGLEEMYANGVTEDNFKNYVKNNFAQQEISSVEEELNVNISDSCVANKIKDEFFAMISISAIVKAAQKKAWKELAVTVLRFAKANGLKTNAIIVAGQLALWAVQCG
+      msa: empty
+
+constraints:
+  - min_distance:
+      atom1: ["A", 10, "CA"]  # Chain A, residue 10, CA atom
+      atom2: ["A", 50, "CA"]  # Chain A, residue 50, CA atom  
+      distance: 15.0          # Minimum distance in Angstroms 

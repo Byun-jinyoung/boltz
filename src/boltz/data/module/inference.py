@@ -16,6 +16,7 @@ from boltz.data.types import (
     Connection,
     Input,
     Manifest,
+    MinDistance, # code modification
     Record,
     ResidueConstraints,
     Structure,
@@ -53,6 +54,7 @@ def load_input(
         residues=structure["residues"],
         chains=structure["chains"],
         connections=structure["connections"].astype(Connection),
+        min_distances=structure.get("min_distances", np.array([], dtype=MinDistance)), # code modification
         interfaces=structure["interfaces"],
         mask=structure["mask"],
     )

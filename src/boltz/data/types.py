@@ -131,6 +131,16 @@ Connection = [
     ("atom_2", np.dtype("i4")),
 ]
 
+MinDistance = [
+    ("chain_1", np.dtype("i4")),
+    ("chain_2", np.dtype("i4")),
+    ("res_1", np.dtype("i4")),
+    ("res_2", np.dtype("i4")),
+    ("atom_1", np.dtype("i4")),
+    ("atom_2", np.dtype("i4")),
+    ("distance", np.dtype("f4")),
+]
+
 Interface = [
     ("chain_1", np.dtype("i4")),
     ("chain_2", np.dtype("i4")),
@@ -146,6 +156,7 @@ class Structure(NumpySerializable):
     residues: np.ndarray
     chains: np.ndarray
     connections: np.ndarray
+    min_distances: np.ndarray
     interfaces: np.ndarray
     mask: np.ndarray
 
@@ -171,6 +182,7 @@ class Structure(NumpySerializable):
             residues=structure["residues"],
             chains=structure["chains"],
             connections=structure["connections"].astype(Connection),
+            min_distances=structure.get("min_distances", np.array([], dtype=MinDistance)), # code modification
             interfaces=structure["interfaces"],
             mask=structure["mask"],
         )
@@ -274,9 +286,31 @@ class Structure(NumpySerializable):
                 new_connection["atom_2"] = atom_map[atom_2]
                 connections.append(new_connection)
 
+        # Update min_distances, code modification
+        min_distances = []
+        for min_distance in self.min_distances:
+            chain_1 = min_distance["chain_1"]
+            chain_2 = min_distance["chain_2"]
+            res_1 = min_distance["res_1"]
+            res_2 = min_distance["res_2"]
+            atom_1 = min_distance["atom_1"]
+            atom_2 = min_distance["atom_2"]
+            distance = min_distance["distance"]
+            if (atom_1 in atom_map) and (atom_2 in atom_map):
+                new_min_distance = min_distance.copy()
+                new_min_distance["chain_1"] = chain_map[chain_1]
+                new_min_distance["chain_2"] = chain_map[chain_2]
+                new_min_distance["res_1"] = res_map[res_1]
+                new_min_distance["res_2"] = res_map[res_2]
+                new_min_distance["atom_1"] = atom_map[atom_1]
+                new_min_distance["atom_2"] = atom_map[atom_2]
+                new_min_distance["distance"] = distance
+                min_distances.append(new_min_distance)
+
         # Create arrays
         bonds = np.array(bonds, dtype=Bond)
         connections = np.array(connections, dtype=Connection)
+        min_distances = np.array(min_distances, dtype=MinDistance)
         interfaces = np.array([], dtype=Interface)
         mask = np.ones(len(chains), dtype=bool)
 
@@ -286,6 +320,7 @@ class Structure(NumpySerializable):
             residues=residues,
             chains=chains,
             connections=connections,
+            min_distances=min_distances,
             interfaces=interfaces,
             mask=mask,
         )
