@@ -15,11 +15,12 @@ from boltz.data.types import (
     MSA,
     Connection,
     Input,
-    Manifest,
-    MinDistance, # code modification
+    Manifest,    
     Record,
     ResidueConstraints,
     Structure,
+    MinDistance, # code modification
+    NMRDistance, # code modification
 )
 
 
@@ -55,6 +56,7 @@ def load_input(
         chains=structure["chains"],
         connections=structure["connections"].astype(Connection),
         min_distances=structure.get("min_distances", np.array([], dtype=MinDistance)), # code modification
+        nmr_distances=structure.get("nmr_distances", np.array([], dtype=NMRDistance)), # code modification
         interfaces=structure["interfaces"],
         mask=structure["mask"],
     )
@@ -217,7 +219,6 @@ class PredictionDataset(torch.utils.data.Dataset):
         -------
         int
             The length of the dataset.
-
         """
         return len(self.manifest.records)
 

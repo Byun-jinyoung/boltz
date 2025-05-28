@@ -1118,6 +1118,24 @@ def process_chain_feature_constraints(
         min_distance_atom_index = torch.empty((2, 0), dtype=torch.long)
         min_distance_values = torch.empty((0,), dtype=torch.float)
 
+    # Process nmr_distance constraints (code modification)
+    if structure.nmr_distances.shape[0] > 0:
+        nmr_distance_atom_index, nmr_distance_lower_bounds, nmr_distance_upper_bounds, nmr_distance_weights = [], [], [], []
+        for nmr_dist in structure.nmr_distances:
+            nmr_distance_atom_index.append([nmr_dist["atom_1"], nmr_dist["atom_2"]])
+            nmr_distance_lower_bounds.append(nmr_dist["lower_bound"])
+            nmr_distance_upper_bounds.append(nmr_dist["upper_bound"])
+            nmr_distance_weights.append(nmr_dist["weight"])
+        nmr_distance_atom_index = torch.tensor(nmr_distance_atom_index, dtype=torch.long).T
+        nmr_distance_lower_bounds = torch.tensor(nmr_distance_lower_bounds, dtype=torch.float)
+        nmr_distance_upper_bounds = torch.tensor(nmr_distance_upper_bounds, dtype=torch.float)
+        nmr_distance_weights = torch.tensor(nmr_distance_weights, dtype=torch.float)
+    else:
+        nmr_distance_atom_index = torch.empty((2, 0), dtype=torch.long)
+        nmr_distance_lower_bounds = torch.empty((0,), dtype=torch.float)
+        nmr_distance_upper_bounds = torch.empty((0,), dtype=torch.float)
+        nmr_distance_weights = torch.empty((0,), dtype=torch.float)
+
     symmetric_chain_index = []
     for i, chain_i in enumerate(structure.chains):
         for j, chain_j in enumerate(structure.chains):
@@ -1132,8 +1150,15 @@ def process_chain_feature_constraints(
     return {
         "connected_chain_index": connected_chain_index,
         "connected_atom_index": connected_atom_index,
-        "min_distance_atom_index": min_distance_atom_index, # code modification
-        "min_distance_values": min_distance_values, # code modification
+        # ==================== #
+        #   code modification  #
+        "min_distance_atom_index": min_distance_atom_index, 
+        "min_distance_values": min_distance_values,
+        "nmr_distance_atom_index": nmr_distance_atom_index,
+        "nmr_distance_lower_bounds": nmr_distance_lower_bounds,
+        "nmr_distance_upper_bounds": nmr_distance_upper_bounds,
+        "nmr_distance_weights": nmr_distance_weights,
+        # ======================
         "symmetric_chain_index": symmetric_chain_index,
     }
 

@@ -1,0 +1,30 @@
+version: 1
+sequences:
+  - protein:
+      id: A
+      sequence: "MADQLTEEQIAEFKEAFSLFDKDGDGTITTKELGTVMRSLGQNPTEAELQDMINEVDADGNGTIDFPEFLTMMARKMKDTDSEEEIREAFRVFDKDGNGYISAAELRHVMTNLGEKLTDEEVDEMIREADIDGDGQVNYEEFVQMMTAK"
+      msa: empty
+      # Template configuration for NMR distance constraints
+      template:
+        structure: "/path/to/template.pdb"  # Path to template structure
+        chain_id: "A"                      # Template chain identifier
+        constraint_type: "nmr_distance"    # Use NMR distance constraints (default)
+        distance_buffer: 0.15              # 15% buffer for bounds (optional)
+        base_weight: 1.5                   # Base weight for constraints, force constant (optional)
+        sequence_identity_weight: true     # Scale weight by sequence identity (optional)
+
+# Additional manual constraints can still be added
+constraints:
+  # Manual NMR constraint
+  - nmr_distance:
+      atom1: ["A", 10, "CA"]
+      atom2: ["A", 50, "CA"]
+      lower_bound: 8.0
+      upper_bound: 12.0
+      weight: 2.0
+  
+  # Manual min_distance constraint (for compatibility)
+  - min_distance:
+      atom1: ["A", 30, "CA"]
+      atom2: ["A", 70, "CA"]
+      distance: 7.0 

@@ -1,0 +1,27 @@
+version: 1
+sequences:
+  - protein:
+      id: A
+      sequence: "MADQLTEEQIAEFKEAFSLFDKDGDGTITTKELGTVMRSLGQNPTEAELQDMINEVDADGNGTIDFPEFLTMMARKMKDTDSEEEIREAFRVFDKDGNGYISAAELRHVMTNLGEKLTDEEVDEMIREADIDGDGQVNYEEFVQMMTAK"
+      msa: empty
+      # Template configuration for min_distance constraints (backward compatibility)
+      template:
+        structure: "/path/to/template.pdb"  # Path to template structure
+        chain_id: "A"                      # Template chain identifier
+        constraint_type: "min_distance"    # Use traditional min_distance constraints
+
+# Additional manual constraints
+constraints:
+  # Manual min_distance constraint
+  - min_distance:
+      atom1: ["A", 15, "CA"]
+      atom2: ["A", 45, "CA"]
+      distance: 10.0
+  
+  # Manual NMR constraint (can be mixed)
+  - nmr_distance:
+      atom1: ["A", 25, "CB"]
+      atom2: ["A", 75, "CB"]
+      lower_bound: 6.0
+      upper_bound: 14.0
+      weight: 1.0 

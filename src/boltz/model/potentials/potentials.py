@@ -219,10 +219,54 @@ class MinDistancePotential(FlatBottomPotential, DistancePotential): # code modif
         min_distance_values = feats['min_distance_values'][0]
         lower_bounds = min_distance_values 
         upper_bounds = None
-        k = torch.ones_like(lower_bounds) * 1
+        k = torch.ones_like(lower_bounds) * 50
 
         return pair_index, (k, lower_bounds, upper_bounds), None
+
+class NMRDistancePotential(FlatBottomPotential, DistancePotential): #
+    """
+    NMR-derived distance constraints with both upper and lower bounds.
+    
+    This potential applies distance constraints derived from NMR experiments,
+    which typically provide both minimum and maximum distance bounds between
+    atom pairs based on NOE data. Unlike MinDistancePotential which only
+    enforces lower bounds, this potential can enforce both bounds simultaneously.
+    """
+    
+    def compute_args(self, feats, parameters):
+        """
+        Compute arguments for NMR distance potential.
         
+        Parameters
+        ----------
+        feats : dict
+            Feature dictionary containing NMR distance constraints
+        parameters : dict
+            Potential parameters including buffers and weights
+            
+        Returns
+        -------
+        tuple
+            (pair_index, (k, lower_bounds, upper_bounds), None)
+        """
+        pair_index = feats['nmr_distance_atom_index'][0]
+        lower_bounds = feats['nmr_distance_lower_bounds'][0].clone()
+        upper_bounds = feats['nmr_distance_upper_bounds'][0].clone()
+        weights = feats['nmr_distance_weights'][0]
+        
+        # Apply buffer to bounds for soft constraints
+        # Lower bounds are reduced by buffer percentage to allow some flexibility
+        lower_bounds = lower_bounds * (1.0 - parameters['lower_buffer'])
+        
+        # Upper bounds are increased by buffer percentage, but handle infinite values
+        finite_mask = torch.isfinite(upper_bounds)
+        upper_bounds[finite_mask] = upper_bounds[finite_mask] * (1.0 + parameters['upper_buffer'])
+        
+        # Apply weights as force constants
+        k = weights # * parameters['base_force_constant']
+        
+        return pair_index, (k, lower_bounds, upper_bounds), None
+
 class VDWOverlapPotential(FlatBottomPotential, DistancePotential):
     def compute_args(self, feats, parameters):
         atom_chain_id = (
@@ -360,12 +404,25 @@ def get_potentials():
                 'buffer': 2.0,
             }
         ),
-        MinDistancePotential( # code modification
+        # ==================== #
+        #  Code Modification   #
+        # ==================== #
+        # MinDistancePotential( # code modification
+        #     parameters={
+        #         'guidance_interval': 1,
+        #         'guidance_weight': 0.15,
+        #         'resampling_weight': 10,
+        #         'buffer': 0.5,
+        #     }
+        # ),
+        NMRDistancePotential( # code modification
             parameters={
                 'guidance_interval': 1,
                 'guidance_weight': 0.15,
-                'resampling_weight': 10,
-                'buffer': 0.5,
+                'resampling_weight': 1.0,
+                'lower_buffer': 0.05,
+                'upper_buffer': 0.05,
+                'base_force_constant': 10.0,
             }
         ),
         PoseBustersPotential(

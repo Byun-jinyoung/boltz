@@ -131,7 +131,7 @@ Connection = [
     ("atom_2", np.dtype("i4")),
 ]
 
-MinDistance = [
+MinDistance = [ # code modification
     ("chain_1", np.dtype("i4")),
     ("chain_2", np.dtype("i4")),
     ("res_1", np.dtype("i4")),
@@ -139,6 +139,18 @@ MinDistance = [
     ("atom_1", np.dtype("i4")),
     ("atom_2", np.dtype("i4")),
     ("distance", np.dtype("f4")),
+]
+
+NMRDistance = [ # code modification
+    ("chain_1", np.dtype("i4")),
+    ("chain_2", np.dtype("i4")),
+    ("res_1", np.dtype("i4")),
+    ("res_2", np.dtype("i4")),
+    ("atom_1", np.dtype("i4")),
+    ("atom_2", np.dtype("i4")),
+    ("lower_bound", np.dtype("f4")),
+    ("upper_bound", np.dtype("f4")),
+    ("weight", np.dtype("f4")),
 ]
 
 Interface = [
@@ -157,6 +169,7 @@ class Structure(NumpySerializable):
     chains: np.ndarray
     connections: np.ndarray
     min_distances: np.ndarray
+    nmr_distances: np.ndarray
     interfaces: np.ndarray
     mask: np.ndarray
 
@@ -182,7 +195,8 @@ class Structure(NumpySerializable):
             residues=structure["residues"],
             chains=structure["chains"],
             connections=structure["connections"].astype(Connection),
-            min_distances=structure.get("min_distances", np.array([], dtype=MinDistance)), # code modification
+            min_distances=structure.get("min_distances", np.array([], dtype=MinDistance)),
+            nmr_distances=structure.get("nmr_distances", np.array([], dtype=NMRDistance)),
             interfaces=structure["interfaces"],
             mask=structure["mask"],
         )
@@ -307,10 +321,36 @@ class Structure(NumpySerializable):
                 new_min_distance["distance"] = distance
                 min_distances.append(new_min_distance)
 
+        # Update nmr_distances, code modification
+        nmr_distances = []
+        for nmr_distance in self.nmr_distances:
+            chain_1 = nmr_distance["chain_1"]
+            chain_2 = nmr_distance["chain_2"]
+            res_1 = nmr_distance["res_1"]
+            res_2 = nmr_distance["res_2"]
+            atom_1 = nmr_distance["atom_1"]
+            atom_2 = nmr_distance["atom_2"]
+            lower_bound = nmr_distance["lower_bound"]
+            upper_bound = nmr_distance["upper_bound"]
+            weight = nmr_distance["weight"]
+            if (atom_1 in atom_map) and (atom_2 in atom_map):
+                new_nmr_distance = nmr_distance.copy()
+                new_nmr_distance["chain_1"] = chain_map[chain_1]
+                new_nmr_distance["chain_2"] = chain_map[chain_2]
+                new_nmr_distance["res_1"] = res_map[res_1]
+                new_nmr_distance["res_2"] = res_map[res_2]
+                new_nmr_distance["atom_1"] = atom_map[atom_1]
+                new_nmr_distance["atom_2"] = atom_map[atom_2]
+                new_nmr_distance["lower_bound"] = lower_bound
+                new_nmr_distance["upper_bound"] = upper_bound
+                new_nmr_distance["weight"] = weight
+                nmr_distances.append(new_nmr_distance)
+
         # Create arrays
         bonds = np.array(bonds, dtype=Bond)
         connections = np.array(connections, dtype=Connection)
-        min_distances = np.array(min_distances, dtype=MinDistance)
+        min_distances = np.array(min_distances, dtype=MinDistance) # code modification
+        nmr_distances = np.array(nmr_distances, dtype=NMRDistance) # code modification
         interfaces = np.array([], dtype=Interface)
         mask = np.ones(len(chains), dtype=bool)
 
@@ -320,7 +360,8 @@ class Structure(NumpySerializable):
             residues=residues,
             chains=chains,
             connections=connections,
-            min_distances=min_distances,
+            min_distances=min_distances, # code modification
+            nmr_distances=nmr_distances, # code modification
             interfaces=interfaces,
             mask=mask,
         )

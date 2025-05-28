@@ -1,0 +1,44 @@
+version: 1
+sequences:
+  - protein:
+      id: A
+      sequence: "MADQLTEEQIAEFKEAFSLFDKDGDGTITTKELGTVMRSLGQNPTEAELQDMINEVDADGNGTIDFPEFLTMMARKMKDTDSEEEIREAFRVFDKDGNGYISAAELRHVMTNLGEKLTDEEVDEMIREADIDGDGQVNYEEFVQMMTAK"
+      msa: empty
+
+# NMR distance constraints with both upper and lower bounds
+constraints:
+  # Example 1: Distance constraint with both bounds
+  - nmr_distance:
+      atom1: ["A", 10, "CA"]  # Chain A, residue 10, CA atom
+      atom2: ["A", 50, "CA"]  # Chain A, residue 50, CA atom
+      lower_bound: 8.0        # Minimum distance in Angstroms
+      upper_bound: 12.0       # Maximum distance in Angstroms
+      weight: 1.0             # Constraint weight (optional, default: 1.0)
+  
+  # Example 2: Only lower bound (upper bound will be infinite)
+  - nmr_distance:
+      atom1: ["A", 15, "CB"]
+      atom2: ["A", 45, "CB"]
+      lower_bound: 5.0
+      weight: 2.0
+  
+  # Example 3: Only upper bound (lower bound will be 0.0)
+  - nmr_distance:
+      atom1: ["A", 20, "CA"]
+      atom2: ["A", 80, "CA"]
+      upper_bound: 15.0
+      weight: 0.5
+  
+  # Example 4: Both bounds with high weight for critical constraint
+  - nmr_distance:
+      atom1: ["A", 25, "CB"]
+      atom2: ["A", 75, "CB"]
+      lower_bound: 6.0
+      upper_bound: 10.0
+      weight: 3.0
+
+# Can still use existing min_distance constraints alongside NMR constraints
+  - min_distance:
+      atom1: ["A", 30, "CA"]
+      atom2: ["A", 70, "CA"]
+      distance: 7.0 

@@ -23,6 +23,7 @@ from boltz.data.types import (
     InferenceOptions,
     Interface,
     MinDistance, # code modification
+    NMRDistance, # code modification
     PlanarBondConstraint,
     PlanarRing5Constraint,
     PlanarRing6Constraint,
@@ -1245,6 +1246,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     logger.info('Parse constraints')
     connections = []
     min_distances = [] # code modification
+    nmr_distances = [] # code modification
     pocket_binders = []
     pocket_residues = []
     
@@ -1286,6 +1288,35 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed to 0-indexed
             c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed to 0-indexed            
             min_distances.append((c1, c2, r1, r2, a1, a2, distance))
+        
+        # NMR distance constraint with upper and lower bounds (code modification)
+        elif "nmr_distance" in constraint:
+            if (
+                "atom1" not in constraint["nmr_distance"] 
+                or "atom2" not in constraint["nmr_distance"]
+            ):
+                msg = "NMR distance constraint was not properly specified"
+                raise ValueError(msg)
+
+            # chain_name, residue_idx, atom_name
+            c1, r1, a1 = tuple(constraint["nmr_distance"]["atom1"])
+            c2, r2, a2 = tuple(constraint["nmr_distance"]["atom2"])
+            lower_bound = float(constraint["nmr_distance"].get("lower_bound", 0.0))
+            upper_bound = float(constraint["nmr_distance"].get("upper_bound", float('inf')))
+            weight = float(constraint["nmr_distance"].get("weight", 1.0))
+            
+            # Validate bounds
+            if lower_bound < 0:
+                msg = f"Lower bound must be non-negative, got {lower_bound}"
+                raise ValueError(msg)
+            if upper_bound <= lower_bound and upper_bound != float('inf'):
+                msg = f"Upper bound ({upper_bound}) must be greater than lower bound ({lower_bound})"
+                raise ValueError(msg)
+            
+            # Convert to internal indices (1-indexed to 0-indexed)
+            c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed to 0-indexed
+            c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed to 0-indexed            
+            nmr_distances.append((c1, c2, r1, r2, a1, a2, lower_bound, upper_bound, weight))
         
         # pocket constraint
         elif "pocket" in constraint:
@@ -1330,6 +1361,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     interfaces = np.array([], dtype=Interface)
     connections = np.array(connections, dtype=Connection)
     min_distances = np.array(min_distances, dtype=MinDistance) # code modification
+    nmr_distances = np.array(nmr_distances, dtype=NMRDistance) # code modification
     mask = np.ones(len(chain_data), dtype=bool)
     rdkit_bounds_constraints = np.array(
         rdkit_bounds_constraint_data, dtype=RDKitBoundsConstraint
@@ -1355,8 +1387,9 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
         bonds=bonds, # atom-level bond for each residue (not residue-level)
         residues=residues,
         chains=chains,
-        connections=connections, #
+        connections=connections, 
         min_distances=min_distances, # code modification
+        nmr_distances=nmr_distances, # code modification
         interfaces=interfaces,
         mask=mask,
     )
