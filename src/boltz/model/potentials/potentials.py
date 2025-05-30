@@ -263,7 +263,7 @@ class NMRDistancePotential(FlatBottomPotential, DistancePotential): #
         upper_bounds[finite_mask] = upper_bounds[finite_mask] * (1.0 + parameters['upper_buffer'])
         
         # Apply weights as force constants
-        k = weights # * parameters['base_force_constant']
+        k = weights * parameters['base_force_constant']
         
         return pair_index, (k, lower_bounds, upper_bounds), None
 
@@ -407,7 +407,7 @@ def get_potentials():
         # ==================== #
         #  Code Modification   #
         # ==================== #
-        # MinDistancePotential( # code modification
+        # MinDistancePotential( 
         #     parameters={
         #         'guidance_interval': 1,
         #         'guidance_weight': 0.15,
@@ -415,14 +415,14 @@ def get_potentials():
         #         'buffer': 0.5,
         #     }
         # ),
-        NMRDistancePotential( # code modification
+        NMRDistancePotential( 
             parameters={
                 'guidance_interval': 1,
                 'guidance_weight': 0.15,
                 'resampling_weight': 1.0,
                 'lower_buffer': 0.05,
                 'upper_buffer': 0.05,
-                'base_force_constant': 10.0,
+                'base_force_constant': 1.0,
             }
         ),
         PoseBustersPotential(

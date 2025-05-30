@@ -266,6 +266,7 @@ class Boltz1(LightningModule):
         multiplicity_diffusion_train: int = 1,
         diffusion_samples: int = 1,
         run_confidence_sequentially: bool = False,
+        save_intermediate_coords: bool = False, # code modification
     ) -> dict[str, Tensor]:
         dict_out = {}
 
@@ -348,6 +349,7 @@ class Boltz1(LightningModule):
                     multiplicity=diffusion_samples,
                     train_accumulate_token_repr=self.training,
                     steering_args=self.steering_args,
+                    save_intermediate_coords=save_intermediate_coords, # code modification
                 )
             )
 
@@ -623,9 +625,9 @@ class Boltz1(LightningModule):
             # Compute predicted dists
             preds = out["pdistogram"]
             pred_softmax = torch.softmax(preds, dim=-1)
-            pred_softmax = pred_softmax.argmax(dim=-1)
+            # pred_softmax = pred_softmax.argmax(dim=-1)
             pred_softmax = torch.nn.functional.one_hot(
-                pred_softmax, num_classes=preds.shape[-1]
+                pred_softmax.argmax(dim=-1), num_classes=preds.shape[-1] # code modification
             )
             pred_dist = (pred_softmax * mid_points).sum(dim=-1)
             true_center = batch["disto_center"]
@@ -1124,7 +1126,7 @@ class Boltz1(LightningModule):
         )
         self.best_rmsd.reset()
 
-    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0, save_intermediate_coords: bool = True) -> Any: # code modification
         try:
             out = self(
                 batch,
@@ -1132,10 +1134,17 @@ class Boltz1(LightningModule):
                 num_sampling_steps=self.predict_args["sampling_steps"],
                 diffusion_samples=self.predict_args["diffusion_samples"],
                 run_confidence_sequentially=True,
+                save_intermediate_coords=save_intermediate_coords, # code modification
             )
             pred_dict = {"exception": False}
             pred_dict["masks"] = batch["atom_pad_mask"]
             pred_dict["coords"] = out["sample_atom_coords"]
+            
+            # Add intermediate trajectory to output if available
+            if save_intermediate_coords and "intermediate_trajectory" in out:
+                pred_dict["intermediate_trajectory"] = out["intermediate_trajectory"] # code modification
+                # print(f"intermediate_trajectory: {pred_dict['intermediate_trajectory']}")
+                
             if self.predict_args.get("write_confidence_summary", True):
                 pred_dict["confidence_score"] = (
                     4 * out["complex_plddt"]

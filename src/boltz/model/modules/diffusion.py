@@ -452,6 +452,7 @@ class AtomDiffusion(Module):
         multiplicity=1,
         train_accumulate_token_repr=False,
         steering_args=None,
+        save_intermediate_coords=False,
         **network_condition_kwargs,
     ):
         potentials = get_potentials()
@@ -486,6 +487,29 @@ class AtomDiffusion(Module):
 
         token_repr = None
         token_a = None
+
+        # Initialize intermediate coordinates storage if requested (code modification)
+        intermediate_trajectory = None
+        if save_intermediate_coords:
+            intermediate_trajectory = {
+                'timesteps': [],
+                'sigmas': [],
+                'noisy_coords': [],
+                'denoised_coords': [],
+                'final_coords': [],
+                'metadata': {
+                    'num_sampling_steps': num_sampling_steps,
+                    'multiplicity': multiplicity,
+                    'init_sigma': init_sigma.item(),
+                    'shape': shape
+                }
+            }
+            # Store initial noisy coordinates
+            intermediate_trajectory['timesteps'].append(-1)  # Pre-loop step
+            intermediate_trajectory['sigmas'].append(init_sigma.item())
+            intermediate_trajectory['noisy_coords'].append(atom_coords.clone().detach())
+            intermediate_trajectory['denoised_coords'].append(None)
+            intermediate_trajectory['final_coords'].append(None)
 
         # gradually denoise
         for step_idx, (sigma_tm, sigma_t, gamma) in enumerate(sigmas_and_gammas):
@@ -668,9 +692,24 @@ class AtomDiffusion(Module):
                 + self.step_scale * (sigma_t - t_hat) * denoised_over_sigma
             )
 
+            # Store intermediate coordinates if requested
+            if save_intermediate_coords:
+                intermediate_trajectory['timesteps'].append(step_idx)
+                intermediate_trajectory['sigmas'].append(t_hat)
+                intermediate_trajectory['noisy_coords'].append(atom_coords_noisy.clone().detach())
+                intermediate_trajectory['denoised_coords'].append(atom_coords_denoised.clone().detach())
+                intermediate_trajectory['final_coords'].append(atom_coords_next.clone().detach())
+
             atom_coords = atom_coords_next
 
-        return dict(sample_atom_coords=atom_coords, diff_token_repr=token_repr)
+        # Prepare return dictionary
+        result = dict(sample_atom_coords=atom_coords, diff_token_repr=token_repr)
+        
+        # Add intermediate trajectory if requested
+        if save_intermediate_coords:
+            result['intermediate_trajectory'] = intermediate_trajectory
+
+        return result
 
     def loss_weight(self, sigma):
         return (sigma**2 + self.sigma_data**2) / ((sigma * self.sigma_data) ** 2)

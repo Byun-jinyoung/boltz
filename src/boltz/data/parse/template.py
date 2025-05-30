@@ -51,7 +51,7 @@ class TemplateConstraintGenerator:
     def __init__(
         self, 
         distance_threshold: float = 20.0,
-        cb_distance_cutoff: float = 100.0,
+        cb_distance_cutoff: float = 5.0,
         min_sequence_identity: float = 0.6,
         gap_penalty: float = -2.0
     ):
@@ -74,6 +74,7 @@ class TemplateConstraintGenerator:
         self.min_sequence_identity = min_sequence_identity
         self.mapper = StructureSequenceMapper(gap_penalty=gap_penalty)
         
+        print(f"  INFO: cb_distance_cutoff: {cb_distance_cutoff} (Angstroms)")
     
     def _extract_cb_coordinates(
         self, 
@@ -153,8 +154,9 @@ class TemplateConstraintGenerator:
                     coord2 = cb_coords[idx2]
                     distance = np.linalg.norm(coord1 - coord2)
                     
-                    if distance <= self.cb_distance_cutoff:
-                        distance_map[(idx1, idx2)] = distance
+                    distance_map[(idx1, idx2)] = distance
+                    # if distance <= self.cb_distance_cutoff:
+                    #     distance_map[(idx1, idx2)] = distance
                         
         return distance_map
     
@@ -235,7 +237,9 @@ class TemplateConstraintGenerator:
                     query_j = template_to_query[temp_j]
                     
                     # Avoid very close residues (sequence separation)
-                    if abs(query_i - query_j) > 5:  # Skip nearby residues
+                    #if abs(query_i - query_j) > 10:  # Skip nearby residues
+                    #if abs(query_i - query_j) <= 1:  # all residues combinations
+                    if abs(query_i - query_j) <= 10:  # consider only nearby residues
                         # Use CA for Glycine, CB for other residues
                         atom1_name = "CA" if query_sequence[query_i] == "G" else "CB"
                         atom2_name = "CA" if query_sequence[query_j] == "G" else "CB"
@@ -264,7 +268,8 @@ class TemplateConstraintGenerator:
                             #     # Normalize by typical protein distance range (5-50 Å)
                             #     distance_factor = max(0.1, (50.0 - min(distance, 50.0)) / 45.0)                                
                             #     weight *= distance_factor
-                            print(lower_bound, upper_bound, weight)                            
+                            #print(lower_bound, upper_bound, weight)                            
+                            
                             # NMR distance format with bounds and weight
                             constraint = {
                                 constraint_type: {

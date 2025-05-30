@@ -606,6 +606,24 @@ def cli() -> None:
     is_flag=True,
     help="Whether to not use potentials for steering. Default is False.",
 )
+# Code Modification
+@click.option(
+    "--save_intermediate_coords",
+    is_flag=True,
+    help="Whether to save intermediate coordinates during diffusion reverse process. Default is False.",
+)
+@click.option(
+    "--intermediate_output_format",
+    type=click.Choice(["pdb", "npz", "both"]),
+    help="Output format for intermediate coordinates. Default is pdb.",
+    default="pdb",
+)
+@click.option(
+    "--intermediate_save_every",
+    type=int,
+    help="Save intermediate coordinates every N timesteps to reduce file count. Default is 10.",
+    default=10,
+)
 def predict(
     data: str,
     out_dir: str,
@@ -627,6 +645,10 @@ def predict(
     msa_server_url: str = "https://api.colabfold.com",
     msa_pairing_strategy: str = "greedy",
     no_potentials: bool = False,
+    # Code Modification
+    save_intermediate_coords: bool = False,
+    intermediate_output_format: str = "pdb",
+    intermediate_save_every: int = 10,
 ) -> None:
     """Run predictions with Boltz-1."""
     # If cpu, write a friendly warning
@@ -727,6 +749,9 @@ def predict(
         "write_confidence_summary": True,
         "write_full_pae": write_full_pae,
         "write_full_pde": write_full_pde,
+        "save_intermediate_coords": save_intermediate_coords,
+        "intermediate_output_format": intermediate_output_format,
+        "intermediate_save_every": intermediate_save_every,
     }
     diffusion_params = BoltzDiffusionParams()
     diffusion_params.step_scale = step_scale
@@ -758,6 +783,9 @@ def predict(
         data_dir=processed.targets_dir,
         output_dir=out_dir / "predictions",
         output_format=output_format,
+        save_intermediate_coords=save_intermediate_coords,
+        intermediate_output_format=intermediate_output_format,
+        intermediate_save_every=intermediate_save_every,
     )
 
     trainer = Trainer(

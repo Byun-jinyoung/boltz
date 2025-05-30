@@ -131,7 +131,15 @@ Connection = [
     ("atom_2", np.dtype("i4")),
 ]
 
-MinDistance = [ # code modification
+Interface = [
+    ("chain_1", np.dtype("i4")),
+    ("chain_2", np.dtype("i4")),
+]
+
+# ==================== #
+#  Code Modification   #
+# ==================== #
+MinDistance = [
     ("chain_1", np.dtype("i4")),
     ("chain_2", np.dtype("i4")),
     ("res_1", np.dtype("i4")),
@@ -141,7 +149,7 @@ MinDistance = [ # code modification
     ("distance", np.dtype("f4")),
 ]
 
-NMRDistance = [ # code modification
+NMRDistance = [
     ("chain_1", np.dtype("i4")),
     ("chain_2", np.dtype("i4")),
     ("res_1", np.dtype("i4")),
@@ -152,12 +160,6 @@ NMRDistance = [ # code modification
     ("upper_bound", np.dtype("f4")),
     ("weight", np.dtype("f4")),
 ]
-
-Interface = [
-    ("chain_1", np.dtype("i4")),
-    ("chain_2", np.dtype("i4")),
-]
-
 
 @dataclass(frozen=True)
 class Structure(NumpySerializable):
