@@ -491,6 +491,12 @@ class AtomDiffusion(Module):
         # Initialize intermediate coordinates storage if requested (code modification)
         intermediate_trajectory = None
         if save_intermediate_coords:
+            # Get save_every interval from network_condition_kwargs if available
+            save_every = getattr(network_condition_kwargs.get('feats', {}), 'intermediate_save_every', 1)
+            if not hasattr(network_condition_kwargs.get('feats', {}), 'intermediate_save_every'):
+                # Default save_every to 1 if not specified
+                save_every = 1
+                
             intermediate_trajectory = {
                 'timesteps': [],
                 'sigmas': [],
@@ -501,15 +507,10 @@ class AtomDiffusion(Module):
                     'num_sampling_steps': num_sampling_steps,
                     'multiplicity': multiplicity,
                     'init_sigma': init_sigma.item(),
-                    'shape': shape
+                    'shape': shape,
+                    'save_every': save_every
                 }
             }
-            # Store initial noisy coordinates
-            intermediate_trajectory['timesteps'].append(-1)  # Pre-loop step
-            intermediate_trajectory['sigmas'].append(init_sigma.item())
-            intermediate_trajectory['noisy_coords'].append(atom_coords.clone().detach())
-            intermediate_trajectory['denoised_coords'].append(None)
-            intermediate_trajectory['final_coords'].append(None)
 
         # gradually denoise
         for step_idx, (sigma_tm, sigma_t, gamma) in enumerate(sigmas_and_gammas):
@@ -692,13 +693,14 @@ class AtomDiffusion(Module):
                 + self.step_scale * (sigma_t - t_hat) * denoised_over_sigma
             )
 
-            # Store intermediate coordinates if requested
-            if save_intermediate_coords:
+            # Store intermediate coordinates if requested (with memory optimization)
+            if save_intermediate_coords and step_idx % save_every == 0:
                 intermediate_trajectory['timesteps'].append(step_idx)
                 intermediate_trajectory['sigmas'].append(t_hat)
-                intermediate_trajectory['noisy_coords'].append(atom_coords_noisy.clone().detach())
-                intermediate_trajectory['denoised_coords'].append(atom_coords_denoised.clone().detach())
-                intermediate_trajectory['final_coords'].append(atom_coords_next.clone().detach())
+                # Only store coordinates if memory allows - use detach and clone for efficiency
+                intermediate_trajectory['noisy_coords'].append(atom_coords_noisy.detach().cpu())
+                intermediate_trajectory['denoised_coords'].append(atom_coords_denoised.detach().cpu())
+                intermediate_trajectory['final_coords'].append(atom_coords_next.detach().cpu())
 
             atom_coords = atom_coords_next
 

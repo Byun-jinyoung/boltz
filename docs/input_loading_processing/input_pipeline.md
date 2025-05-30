@@ -21,7 +21,7 @@ flowchart TD
     I --> J[Save NPZ Files<br/>(structures/, msa/, constraints/)]
     J --> K[Generate manifest.json<br/>(Record metadata)]
     
-    %% Data Loading Phase`
+    %% Data Loading Phase
     K --> L[BoltzInferenceDataModule<br/>(src/boltz/data/module/inference.py)]
     L --> M[PredictionDataset.__getitem__<br/>(load_input function)]
     M --> N[Input Object<br/>(Structure, MSA, ResidueConstraints)]

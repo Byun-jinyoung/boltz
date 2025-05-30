@@ -1126,7 +1126,10 @@ class Boltz1(LightningModule):
         )
         self.best_rmsd.reset()
 
-    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0, save_intermediate_coords: bool = True) -> Any: # code modification
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        # Get save_intermediate_coords setting from predict_args instead of hardcoding
+        save_intermediate_coords = self.predict_args.get("save_intermediate_coords", False)
+        
         try:
             out = self(
                 batch,
@@ -1134,7 +1137,7 @@ class Boltz1(LightningModule):
                 num_sampling_steps=self.predict_args["sampling_steps"],
                 diffusion_samples=self.predict_args["diffusion_samples"],
                 run_confidence_sequentially=True,
-                save_intermediate_coords=save_intermediate_coords, # code modification
+                save_intermediate_coords=save_intermediate_coords,
             )
             pred_dict = {"exception": False}
             pred_dict["masks"] = batch["atom_pad_mask"]
@@ -1142,8 +1145,7 @@ class Boltz1(LightningModule):
             
             # Add intermediate trajectory to output if available
             if save_intermediate_coords and "intermediate_trajectory" in out:
-                pred_dict["intermediate_trajectory"] = out["intermediate_trajectory"] # code modification
-                # print(f"intermediate_trajectory: {pred_dict['intermediate_trajectory']}")
+                pred_dict["intermediate_trajectory"] = out["intermediate_trajectory"]
                 
             if self.predict_args.get("write_confidence_summary", True):
                 pred_dict["confidence_score"] = (
