@@ -614,6 +614,7 @@ def parse_polymer(
     components: dict[str, Mol],
     cyclic: bool,
     custom_template: Optional[Mol] = None,
+    add_rdkit_bonds: bool = False,
 ) -> Optional[ParsedChain]:
     """Process a sequence into a chain object.
 
@@ -631,6 +632,9 @@ def parse_polymer(
         The entity type.
     components : dict[str, Mol]
         The preprocessed PDB components dictionary. {'component_name': RDkit Mol}
+    add_rdkit_bonds : bool, optional
+        Generate intra-residue bond length constraints for standard residues
+        using RDKit geometry (default: False).
 
     Returns
     -------
@@ -685,6 +689,8 @@ def parse_polymer(
 
         # Iterate, always in the same order
         atoms: list[ParsedAtom] = []
+        idx_map = {}
+        atom_idx = 0
 
         for ref_atom in ref_atoms:
             # Get atom name
@@ -721,9 +727,30 @@ def parse_polymer(
                     ),
                 )
             )
+            idx_map[idx] = atom_idx
+            atom_idx += 1
 
         atom_center = const.res_to_center_atom_id[res_corrected]
         atom_disto = const.res_to_disto_atom_id[res_corrected]
+
+        rdkit_bounds_constraints = None
+        if add_rdkit_bonds:
+            bond_constraints = [
+                c
+                for c in compute_geometry_constraints(ref_mol, idx_map)
+                if c.is_bond
+            ]
+            rdkit_bounds_constraints = [
+                ParsedRDKitBoundsConstraint(
+                    atom_idxs=c.atom_idxs,
+                    is_bond=True,
+                    is_angle=False,
+                    upper_bound=c.upper_bound,
+                    lower_bound=c.lower_bound,
+                )
+                for c in bond_constraints
+            ]
+
         parsed.append(
             ParsedResidue(
                 name=res_corrected,
@@ -736,6 +763,7 @@ def parse_polymer(
                 is_standard=True,
                 is_present=True,
                 orig_idx=None,
+                rdkit_bounds_constraints=rdkit_bounds_constraints,
             )
         )
 
@@ -924,12 +952,14 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             cyclic = items[0][entity_type].get("cyclic", False)
 
             # Parse a polymer
+            add_constraints = "template" in items[0][entity_type]
             parsed_chain = parse_polymer(
                 sequence=seq,
                 entity=entity_id,
                 chain_type=chain_type,
                 components=ccd,
                 cyclic=cyclic,
+                add_rdkit_bonds=add_constraints,
             )
             #print(parsed_chain)
 
