@@ -1224,7 +1224,6 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     # Generate template constraints for each chain with template info
     if template_info_by_chain:
         try:
-            
             generator = TemplateConstraintGenerator()
             
             for chain_id, info in template_info_by_chain.items():
@@ -1235,12 +1234,11 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                     template_chain_id=info["chain_id"],
                     query_chain_id=chain_id
                 )
-                template_constraints.extend(constraints)
-                
+                # for c in constraints[:10]:
+                #     print(c)
+                template_constraints.extend(constraints)                
         except Exception as e:
-            print(f"[WARNING] Failed to generate template constraints: {e}")
-    # print(template_constraints)
-    # sys.exit(0)
+            print(f"[WARNING] Failed to generate template constraints: {e}")    
     
     # Parse constraints
     logger.info('Parse constraints')

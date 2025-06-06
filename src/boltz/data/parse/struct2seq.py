@@ -127,7 +127,7 @@ class StructureSequenceMapper:
         raise ValueError(f"Chain {chain_id} not found or contains no valid residues in {structure_file}")
 
 
-    def map_sequences(self, structure_file: str, chain_id: str, given_sequence: str) -> Tuple[List[Tuple[int, int]], dict]:
+    def map_sequences(self, structure_file: str, chain_id: str, given_sequence: str) -> Tuple[str, str, List[Tuple[int, int]], dict]:
         try:
             structure_sequence, structure_residues = self.extract_sequence_from_structure(structure_file, chain_id)
             
@@ -155,15 +155,16 @@ class StructureSequenceMapper:
                 
                 struct_idx += 1
                 given_idx += 1
-            print(final_mapping)
             
+            print(final_mapping)            
+
             stats = {
                 "aligned_length": len(mapping), 
                 "structure_length": len(structure_sequence), 
                 "given_length": len(given_sequence)
             }
+
             return aligned_struct, aligned_given, final_mapping, stats
-            #return final_mapping, stats
 
         except Exception as e:
             print(e)

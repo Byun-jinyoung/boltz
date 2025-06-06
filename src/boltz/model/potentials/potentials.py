@@ -418,7 +418,12 @@ def get_potentials():
         NMRDistancePotential( 
             parameters={
                 'guidance_interval': 1,
-                'guidance_weight': 0.15,
+                'guidance_weight': 0.5,
+                # 'guidance_weight': ExponentialInterpolation(
+                #     start=0.5,
+                #     end=0.75,
+                #     alpha=-5.0
+                # ),                
                 'resampling_weight': 1.0,
                 'lower_buffer': 0.05,
                 'upper_buffer': 0.05,

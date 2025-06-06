@@ -51,7 +51,7 @@ class TemplateConstraintGenerator:
     def __init__(
         self, 
         distance_threshold: float = 20.0,
-        cb_distance_cutoff: float = 5.0,
+        cb_distance_cutoff: float = 50.0,
         min_sequence_identity: float = 0.6,
         gap_penalty: float = -2.0
     ):
@@ -154,9 +154,9 @@ class TemplateConstraintGenerator:
                     coord2 = cb_coords[idx2]
                     distance = np.linalg.norm(coord1 - coord2)
                     
-                    distance_map[(idx1, idx2)] = distance
-                    # if distance <= self.cb_distance_cutoff:
-                    #     distance_map[(idx1, idx2)] = distance
+                    # apply distance filtering - only include distances below cutoff
+                    if 11 <= distance <= self.cb_distance_cutoff:
+                        distance_map[(idx1, idx2)] = distance
                         
         return distance_map
     
@@ -238,15 +238,16 @@ class TemplateConstraintGenerator:
                     
                     # Avoid very close residues (sequence separation)
                     #if abs(query_i - query_j) > 10:  # Skip nearby residues
-                    #if abs(query_i - query_j) <= 1:  # all residues combinations
-                    if abs(query_i - query_j) <= 10:  # consider only nearby residues
+                    #if abs(query_i - query_j) >= 4:                     
+                    # if abs(query_i - query_j) <= 20:  # consider only nearby residues
+                    if 15 <= abs(query_i - query_j) <= 50:  # consider only nearby residues
                         # Use CA for Glycine, CB for other residues
                         atom1_name = "CA" if query_sequence[query_i] == "G" else "CB"
                         atom2_name = "CA" if query_sequence[query_j] == "G" else "CB"
+
                         
                         # Generate constraint based on type
                         if constraint_type == "min_distance":
-                            # Original min_distance format
                             constraint = {
                                 constraint_type: {
                                     "atom1": [query_chain_id, query_i + 1, atom1_name],  # 1-indexed
@@ -270,7 +271,7 @@ class TemplateConstraintGenerator:
                             #     weight *= distance_factor
                             #print(lower_bound, upper_bound, weight)                            
                             
-                            # NMR distance format with bounds and weight
+                            # NMR distance format with bounds and weight                            
                             constraint = {
                                 constraint_type: {
                                     "atom1": [query_chain_id, query_i + 1, atom1_name],  # 1-indexed
@@ -438,4 +439,4 @@ def apply_template_constraints(
         "sequence_identity_weight": sequence_identity_weight
     }
     
-    return generator.generate_constraints_for_boltz_schema(schema_data, template_info) 
+    return generator.generate_constraints_for_boltz_schema(schema_data, template_info)
