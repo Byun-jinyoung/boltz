@@ -105,17 +105,27 @@ class TemplateConstraintGenerator:
                     if chain.id == chain_id:
                         residue_idx = 0
                         for residue in chain:
-                            if residue.id[0] == " ":  # Standard residue
-                                # Try Cb first, fall back to Ca for Glycine
+                            if residue.id[0] == " ":  # Standard residue                                
+                                res_name = residue.resname.strip() # Get residue name
+                                
                                 cb_atom = None
-                                if 'CB' in residue:
-                                    cb_atom = residue['CB']
-                                elif 'CA' in residue:  # Glycine case
-                                    cb_atom = residue['CA']
+                                if (res_name == "GLY") or (res_name == "PRO"): 
+                                    # if 'CA' in residue: # Glycine doesn't have CB, use CA instead                                    
+                                    #     cb_atom = residue['CA']
+                                    # else:
+                                    #     warnings.warn(f"Missing CA atom in GLY residue at position {residue_idx}")
+                                    pass
+                                else:                                    
+                                    if 'CB' in residue: # For other residues, try CB first
+                                        cb_atom = residue['CB']                                    
+                                    else:
+                                        warnings.warn(f"Missing both CB and CA atoms in {res_name} residue at position {residue_idx}")
                                 
                                 if cb_atom is not None:
                                     cb_coords[residue_idx] = np.array(cb_atom.get_coord())
-                                
+                                else:
+                                    warnings.warn(f"Missing CB atom in {res_name} residue at position {residue_idx}")
+                                    
                                 residue_idx += 1
                         break
                 break
@@ -240,7 +250,7 @@ class TemplateConstraintGenerator:
                     #if abs(query_i - query_j) > 10:  # Skip nearby residues
                     #if abs(query_i - query_j) >= 4:                     
                     # if abs(query_i - query_j) <= 20:  # consider only nearby residues
-                    if 15 <= abs(query_i - query_j) <= 50:  # consider only nearby residues
+                    if 10 <= abs(query_i - query_j) <= 50:  # consider only nearby residues
                         # Use CA for Glycine, CB for other residues
                         atom1_name = "CA" if query_sequence[query_i] == "G" else "CB"
                         atom2_name = "CA" if query_sequence[query_j] == "G" else "CB"

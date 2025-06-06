@@ -282,6 +282,18 @@ def compute_geometry_constraints(mol: Mol, idx_map):
     if mol.GetNumAtoms() <= 1:
         return []
 
+    # # Create a copy and sanitize it to ensure RingInfo is initialized
+    # mol_copy = Chem.Mol(mol)
+    # try:
+    #     Chem.SanitizeMol(mol_copy)
+    # except Exception:
+    #     # If sanitization fails, try with different options
+    #     try:
+    #         Chem.SanitizeMol(mol_copy, sanitizeOps=Chem.SANITIZE_ALL^Chem.SANITIZE_KEKULIZE)
+    #     except Exception:
+    #         # As a last resort, use the original mol and hope it works
+    #         mol_copy = mol
+
     bounds = GetMoleculeBoundsMatrix(
         mol,
         set15bounds=True,
@@ -289,14 +301,18 @@ def compute_geometry_constraints(mol: Mol, idx_map):
         doTriangleSmoothing=True,
         useMacrocycle14config=False,
     )
+    # bond sets in mol
+    # ex) {(0, 1), (1, 2), (8, 10), (1, 4), (2, 3), (6, 7), (4, 5), (8, 9), (5, 6), (2, 11), (7, 8)}
     bonds = set(
         tuple(sorted(b)) for b in mol.GetSubstructMatches(Chem.MolFromSmarts("*~*"))
     )
+    # angle sets in mol
+    # ex) {(2, 4), (0, 4), (1, 5), (5, 8), (4, 6), (5, 7), (0, 2), (3, 9), (1, 3), (1, 9), (7, 8)}
     angles = set(
         tuple(sorted([a[0], a[2]]))
         for a in mol.GetSubstructMatches(Chem.MolFromSmarts("*~*~*"))
     )
-
+        
     constraints = []
     for i, j in zip(*np.triu_indices(mol.GetNumAtoms(), k=1)):
         if i in idx_map and j in idx_map:
@@ -646,41 +662,33 @@ def parse_polymer(
     ValueError
         If the alignment fails.
 
-    """
-    # [NOTE] code modification
-    # if entity_type == 'protein' and custom_template is not None: 
-    #     atom_dict = read_mmcif_atoms(custom_template)
-    #     # [TODO] mapping must be input in yaml file if custom_template like AF3    
-    
+    """        
+    ## const.tokens
     # protein: {'CYS', 'TRP', '<pad>', 'DG', 'PHE', 'ASP', 'VAL', 'ASN', 'ILE', 'U', 'GLN', 'DN', '-', 'LYS', 'ALA', 'HIS', 'C', 'DT', 'PRO', 'GLU', 'A', 'G', 'DA', 'UNK', 'DC', 'THR', 'N', 'ARG', 'TYR', 'SER', 'MET', 'LEU', 'GLY'}
     # dna: ...
     # rna: ...
     ref_res = set(const.tokens)
     unk_chirality = const.chirality_type_ids[const.unk_chirality_type]
 
-    print(f' INFO: parse_polymer: Get coordinates and masks')
+    print(f'  INFO: parse_polymer: Get coordinates and masks')
     parsed = []
     for res_idx, res_name in enumerate(sequence):
-        # Check if modified residue
-        # Map MSE to MET
-        res_corrected = res_name if res_name != "MSE" else "MET"
+        # Check if modified residue        
+        res_corrected = res_name if res_name != "MSE" else "MET" # Map MSE to MET
 
         # Handle non-standard residues
         if res_corrected not in ref_res:
-            print(f'[INFO ] handle non-standard residue {res_corrected}')
-            print(f'[NOTE ] S-S bond는 polymer이지만 non-standard로 처리')
+            print(f'[INFO ] handle non-standard residue {res_corrected}') # [NOTE ] S-S bond는 polymer이지만 non-standard로 처리?
             ref_mol = components[res_corrected]
             residue = parse_ccd_residue(
-                name=res_corrected,
-                ref_mol=ref_mol,
-                res_idx=res_idx,
+                name=res_corrected, ref_mol=ref_mol, res_idx=res_idx,
             )
             parsed.append(residue)
             continue
 
-        # Load ref residue
+        # Load RDkit Mol object of ref residue 
         ref_mol = components[res_corrected]
-        ref_mol = AllChem.RemoveHs(ref_mol, sanitize=False)
+        ref_mol = AllChem.RemoveHs(ref_mol, sanitize=True) # sanitize=True for bond constraint
         ref_conformer = get_conformer(ref_mol)
 
         # Only use reference atoms set in constants, {protein atom name: rdkit mol}
@@ -735,11 +743,12 @@ def parse_polymer(
 
         rdkit_bounds_constraints = None
         if add_rdkit_bonds:
+            print(f'  INFO: add_rdkit_bonds for {res_name}{res_idx} to gurantee geometry when template structure is provided')
             bond_constraints = [
-                c
-                for c in compute_geometry_constraints(ref_mol, idx_map)
+                c for c in compute_geometry_constraints(ref_mol, idx_map)
                 if c.is_bond
             ]
+
             rdkit_bounds_constraints = [
                 ParsedRDKitBoundsConstraint(
                     atom_idxs=c.atom_idxs,
@@ -751,19 +760,41 @@ def parse_polymer(
                 for c in bond_constraints
             ]
 
+        # Extract intra-residue bonds from RDKit molecule (code modification)
+        bonds = []
+        if ref_mol.GetNumAtoms() > 1:  # Only process if molecule has more than one atom
+            unk_bond = const.bond_type_ids[const.unk_bond_type]
+            ref_atom_indices = set(ref_name_to_atom[a].GetIdx() for a in const.ref_atoms[res_corrected])
+            
+            for bond in ref_mol.GetBonds():
+                idx_1 = bond.GetBeginAtomIdx()
+                idx_2 = bond.GetEndAtomIdx()
+                
+                # Only include bonds where both atoms are in the reference atom set
+                if idx_1 in ref_atom_indices and idx_2 in ref_atom_indices:
+                    # Check if both atoms are in idx_map (should be true for ref_atoms)
+                    if idx_1 in idx_map and idx_2 in idx_map:
+                        mapped_idx_1 = idx_map[idx_1]
+                        mapped_idx_2 = idx_map[idx_2]
+                        start = min(mapped_idx_1, mapped_idx_2)
+                        end = max(mapped_idx_1, mapped_idx_2)
+                        bond_type = bond.GetBondType().name
+                        bond_type = const.bond_type_ids.get(bond_type, unk_bond)
+                        bonds.append(ParsedBond(start, end, bond_type))
+
         parsed.append(
             ParsedResidue(
                 name=res_corrected,
                 type=const.token_ids[res_corrected],
                 atoms=atoms,
-                bonds=[],
+                bonds=bonds,  # Now includes intra-residue bonds (code modification)
                 idx=res_idx,
                 atom_center=atom_center,
                 atom_disto=atom_disto,
                 is_standard=True,
                 is_present=True,
                 orig_idx=None,
-                rdkit_bounds_constraints=rdkit_bounds_constraints,
+                rdkit_bounds_constraints=rdkit_bounds_constraints, # (code modification)
             )
         )
 
