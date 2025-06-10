@@ -33,6 +33,8 @@ from boltz.data.types import (
     Ensemble,
     InferenceOptions,
     Interface,
+    MinDistance,
+    NMRDistance,
     PlanarBondConstraint,
     PlanarRing5Constraint,
     PlanarRing6Constraint,
@@ -1302,6 +1304,10 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     planar_bond_constraint_data = []
     planar_ring_5_constraint_data = []
     planar_ring_6_constraint_data = []
+    
+    # code modification - initialize constraint lists
+    min_distances = []
+    nmr_distances = []
 
     # Convert parsed chains to tables
     atom_idx = 0
@@ -1495,6 +1501,47 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed
             c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed
             connections.append((c1, c2, r1, r2, a1, a2))
+        elif "min_distance" in constraint:
+            if "atom1" not in constraint["min_distance"] or "atom2" not in constraint["min_distance"]:
+                msg = "Min distance constraint was not properly specified"
+                raise ValueError(msg)
+
+            # chain_name, residue_idx, atom_name
+            c1, r1, a1 = tuple(constraint["min_distance"]["atom1"])
+            c2, r2, a2 = tuple(constraint["min_distance"]["atom2"])
+            distance = float(constraint["min_distance"]["distance"])
+            
+            # Convert to internal indices (1-indexed to 0-indexed)
+            c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed to 0-indexed
+            c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed to 0-indexed            
+            min_distances.append((c1, c2, r1, r2, a1, a2, distance))
+        elif "nmr_distance" in constraint:
+            if (
+                "atom1" not in constraint["nmr_distance"] 
+                or "atom2" not in constraint["nmr_distance"]
+            ):
+                msg = "NMR distance constraint was not properly specified"
+                raise ValueError(msg)
+
+            # chain_name, residue_idx, atom_name
+            c1, r1, a1 = tuple(constraint["nmr_distance"]["atom1"])
+            c2, r2, a2 = tuple(constraint["nmr_distance"]["atom2"])
+            lower_bound = float(constraint["nmr_distance"].get("lower_bound", 0.0))
+            upper_bound = float(constraint["nmr_distance"].get("upper_bound", float('inf')))
+            weight = float(constraint["nmr_distance"].get("weight", 1.0))
+            
+            # Validate bounds
+            if lower_bound < 0:
+                msg = f"Lower bound must be non-negative, got {lower_bound}"
+                raise ValueError(msg)
+            if upper_bound <= lower_bound and upper_bound != float('inf'):
+                msg = f"Upper bound ({upper_bound}) must be greater than lower bound ({lower_bound})"
+                raise ValueError(msg)
+            
+            # Convert to internal indices (1-indexed to 0-indexed)
+            c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed to 0-indexed
+            c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed to 0-indexed            
+            nmr_distances.append((c1, c2, r1, r2, a1, a2, lower_bound, upper_bound, weight))
         elif "pocket" in constraint:
             if (
                 "binder" not in constraint["pocket"]
@@ -1686,6 +1733,10 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     planar_ring_6_constraints = np.array(
         planar_ring_6_constraint_data, dtype=PlanarRing6Constraint
     )
+    
+    # code modification - convert constraint lists to numpy arrays
+    min_distances = np.array(min_distances, dtype=MinDistance)
+    nmr_distances = np.array(nmr_distances, dtype=NMRDistance)
 
     if boltz_2:
         atom_data = [(a[0], a[3], a[5], 0.0, 1.0) for a in atom_data]
@@ -1718,6 +1769,8 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             residues=residues,
             chains=chains,
             connections=connections,
+            min_distances=min_distances,
+            nmr_distances=nmr_distances,
             interfaces=interfaces,
             mask=mask,
         )
