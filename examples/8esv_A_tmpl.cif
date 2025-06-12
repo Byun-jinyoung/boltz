@@ -31,7 +31,6 @@ _pdbx_database_status.status_code          'REL'
 _pdbx_database_status.recvd_initial_deposition_date '2022-01-10'
 _pdbx_database_status.date_of_release      '2022-03-15'
 _pdbx_audit_revision_history.revision_date 2019-11-20
-_pdbx_database_status.recvd_initial_deposition_date 2019-11-20
 #
 loop_
 _citation_author.citation_id

@@ -1750,6 +1750,10 @@ def process_template_features(
         The loaded template features.
 
     """
+    #print(f'[INFO ] process_template_features: {data.record.templates}')
+    #print(f'  INFO: process_template_features: {data.templates}')
+    
+    ## template group화 mapping
     # Group templates by name
     name_to_templates: dict[str, list[TemplateInfo]] = {}
     for template_info in data.record.templates:
@@ -1760,7 +1764,8 @@ def process_template_features(
     for chain in data.structure.chains:
         chain_name_to_asym_id[chain["name"]] = chain["asym_id"]
 
-    # Compute the offset
+    ## 2. Token mapping and extract template feature
+    # Compute the offset, template과 query 간의 잔기 대응관계 설정
     template_features = []
     for template_id, (template_name, templates) in enumerate(name_to_templates.items()):
         row_tokens = []
@@ -1771,7 +1776,7 @@ def process_template_features(
             tmpl_chain_name_to_asym_id[chain["name"]] = chain["asym_id"]
 
         for template in templates:
-            offset = template.template_st - template.query_st
+            offset = template.template_st - template.query_st # [IMPT]
 
             # Get query and template tokens to map residues
             query_tokens = data.tokens
@@ -1793,6 +1798,7 @@ def process_template_features(
                     }
                 )
 
+        ## 3. Featurize template info
         # Compute template features for each row
         row_features = compute_template_features(data, row_tokens, max_tokens)
         template_features.append(row_features)
@@ -2024,6 +2030,90 @@ def process_chain_feature_constraints(data: Tokenized) -> dict[str, Tensor]:
     }
 
 
+def process_distance_constraint_features(data: Tokenized) -> dict[str, Tensor]:
+    """
+    Process distance constraints (MinDistance and NMRDistance) into model features.
+    
+    Parameters
+    ----------
+    data : Tokenized
+        The tokenized data containing distance constraints.
+        
+    Returns
+    -------
+    dict[str, Tensor]
+        Dictionary containing constraint features:
+        - min_distance_atom_index: [2, N_min] atom pair indices for min distance constraints
+        - min_distance_values: [N_min] minimum distance values
+        - nmr_distance_atom_index: [2, N_nmr] atom pair indices for NMR distance constraints  
+        - nmr_distance_lower_bounds: [N_nmr] lower bound values
+        - nmr_distance_upper_bounds: [N_nmr] upper bound values
+        - nmr_distance_weights: [N_nmr] constraint weights
+    """
+    structure = data.structure
+    features = {}
+    
+    # Process MinDistance constraints
+    if hasattr(structure, 'min_distances') and structure.min_distances is not None:
+        try:
+            # Safe check for numpy array with constraints and proper dimensions
+            if (hasattr(structure.min_distances, 'size') and 
+                hasattr(structure.min_distances, 'ndim') and
+                structure.min_distances.size > 0 and 
+                structure.min_distances.ndim > 0):
+                min_distance_atom_pairs = []
+                min_distance_values = []
+                
+                for constraint in structure.min_distances:
+                    # Extract atom indices for the pair
+                    atom_1 = constraint["atom_1"]
+                    atom_2 = constraint["atom_2"]
+                    distance = constraint["distance"]
+                    
+                    min_distance_atom_pairs.append([atom_1, atom_2])
+                    min_distance_values.append(distance)
+                
+                features["min_distance_atom_index"] = torch.tensor(min_distance_atom_pairs, dtype=torch.long).T
+                features["min_distance_values"] = torch.tensor(min_distance_values, dtype=torch.float)
+        except Exception as e:
+            print(f'DEBUG - Error processing min_distances: {e}')
+    
+    # Process NMRDistance constraints  
+    if hasattr(structure, 'nmr_distances') and structure.nmr_distances is not None:
+        try:
+            # Safe check for numpy array with constraints and proper dimensions
+            if (hasattr(structure.nmr_distances, 'size') and 
+                hasattr(structure.nmr_distances, 'ndim') and
+                structure.nmr_distances.size > 0 and 
+                structure.nmr_distances.ndim > 0):
+                nmr_distance_atom_pairs = []
+                nmr_distance_lower_bounds = []
+                nmr_distance_upper_bounds = []
+                nmr_distance_weights = []
+                
+                for constraint in structure.nmr_distances:
+                    # Extract atom indices for the pair
+                    atom_1 = constraint["atom_1"]
+                    atom_2 = constraint["atom_2"]
+                    lower_bound = constraint["lower_bound"]
+                    upper_bound = constraint["upper_bound"]
+                    weight = constraint["weight"]
+                    
+                    nmr_distance_atom_pairs.append([atom_1, atom_2])
+                    nmr_distance_lower_bounds.append(lower_bound)
+                    nmr_distance_upper_bounds.append(upper_bound)
+                    nmr_distance_weights.append(weight)
+                
+                features["nmr_distance_atom_index"] = torch.tensor(nmr_distance_atom_pairs, dtype=torch.long).T
+                features["nmr_distance_lower_bounds"] = torch.tensor(nmr_distance_lower_bounds, dtype=torch.float)
+                features["nmr_distance_upper_bounds"] = torch.tensor(nmr_distance_upper_bounds, dtype=torch.float)
+                features["nmr_distance_weights"] = torch.tensor(nmr_distance_weights, dtype=torch.float)
+        except Exception as e:
+            print(f'DEBUG - Error processing nmr_distances: {e}')
+    
+    return features
+
+
 class Boltz2Featurizer:
     """Boltz2 featurizer."""
 
@@ -2190,9 +2280,12 @@ class Boltz2Featurizer:
 
         # Compute residue constraint features
         residue_constraint_features = {}
+        chain_constraint_features = {} # code modification
+        distance_constraint_features = {} # code modification
         if compute_constraint_features:
             residue_constraint_features = process_residue_constraint_features(data)
             chain_constraint_features = process_chain_feature_constraints(data)
+            distance_constraint_features = process_distance_constraint_features(data) # 
 
         return {
             **token_features,
@@ -2204,5 +2297,6 @@ class Boltz2Featurizer:
             **ensemble_features,
             **residue_constraint_features,
             **chain_constraint_features,
+            **distance_constraint_features, # code modification
             **ligand_to_mw,
         }

@@ -32,9 +32,7 @@ from boltz.data.types import (
     Coords,
     Ensemble,
     InferenceOptions,
-    Interface,
-    MinDistance,
-    NMRDistance,
+    Interface,    
     PlanarBondConstraint,
     PlanarRing5Constraint,
     PlanarRing6Constraint,
@@ -48,7 +46,19 @@ from boltz.data.types import (
     StructureV2,
     Target,
     TemplateInfo,
+    
+    # Code modification - add constraint fields
+    MinDistance,
+    NMRDistance,
 )
+
+# ========================== #
+# -- My Code Modification -- #
+# ========================== #
+from boltz.data.parse.template import TemplateConstraintGenerator
+
+from boltz.logger_config import MyLogger
+logger = MyLogger
 
 ####################################################################################################
 # DATACLASSES
@@ -1008,6 +1018,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     items_to_group = {}
     chain_name_to_entity_type = {}
 
+    logger.info('Makes items into group')
     for item in schema["sequences"]:
         # Get entity type
         entity_type = next(iter(item.keys())).lower()
@@ -1034,7 +1045,9 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
         chain_names = [chain_names] if isinstance(chain_names, str) else chain_names
         for chain_name in chain_names:
             chain_name_to_entity_type[chain_name] = entity_type
+    ## ------------------------------------ ##
 
+    logger.info('Check affinity ligand with any affinity properties')
     # Check if any affinity ligand is present
     affinity_ligands = set()
     properties = schema.get("properties", [])
@@ -1063,21 +1076,27 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                 raise ValueError(msg)
 
             affinity_ligands.add(binder)
+        else:
+            msg = f"Unknown property type: {prop_type}. Please check out your input!"
+            raise ValueError(msg)
 
     # Check only one affinity ligand is present
     if len(affinity_ligands) > 1:
         msg = "Only one affinity ligand is currently supported!"
         raise ValueError(msg)
+    ## ------------------------------------ ##
 
     # Go through entities and parse them
+    logger.info('Parse entities')
     extra_mols: dict[str, Mol] = {}
     chains: dict[str, ParsedChain] = {}
     chain_to_msa: dict[str, str] = {}
     entity_to_seq: dict[str, str] = {}
     is_msa_custom = False
     is_msa_auto = False
-    ligand_id = 1
+    ligand_id = 1    
     for entity_id, items in enumerate(items_to_group.values()):
+        print(f'[INFO ] Parse entity: {entity_id}')
         # Get entity type and sequence
         entity_type = next(iter(items[0].keys())).lower()
 
@@ -1133,6 +1152,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
 
         # Parse a polymer
         if entity_type in {"protein", "dna", "rna"}:
+            print(f'  INFO: parse a polymer {entity_type}')
             # Get token map
             if entity_type == "rna":
                 token_map = const.rna_letter_to_token
@@ -1176,6 +1196,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
 
         # Parse a non-polymer
         elif (entity_type == "ligand") and "ccd" in (items[0][entity_type]):
+            print(f'  INFO: parse a non-polymer {entity_type}')
             seq = items[0][entity_type]["ccd"]
 
             if isinstance(seq, str):
@@ -1218,6 +1239,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             ), "Cyclic flag is not supported for ligands"
 
         elif (entity_type == "ligand") and ("smiles" in items[0][entity_type]):
+            print(f'  INFO: parse a non-polymer {entity_type}')
             seq = items[0][entity_type]["smiles"]
 
             if affinity:
@@ -1279,12 +1301,14 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             for chain_name in ids:
                 chains[chain_name] = parsed_chain
                 chain_to_msa[chain_name] = msa
+    ## ------------------------------------ ##
 
     # Check if msa is custom or auto
     if is_msa_custom and is_msa_auto:
         msg = "Cannot mix custom and auto-generated MSAs in the same input!"
         raise ValueError(msg)
 
+    print('[INFO ] Create structure information mapping to atom_idx')
     # If no chains parsed fail
     if not chains:
         msg = "No chains parsed!"
@@ -1296,7 +1320,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     res_data = []
     chain_data = []
     protein_chains = set()
-    affinity_info = None
+    affinity_info = None # for v2
 
     rdkit_bounds_constraint_data = []
     chiral_atom_constraint_data = []
@@ -1305,10 +1329,6 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     planar_ring_5_constraint_data = []
     planar_ring_6_constraint_data = []
     
-    # code modification - initialize constraint lists
-    min_distances = []
-    nmr_distances = []
-
     # Convert parsed chains to tables
     atom_idx = 0
     res_idx = 0
@@ -1377,6 +1397,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                 )
             )
 
+            # Parsed된 ligand residue 단위에서만 사용됨
             if res.rdkit_bounds_constraints is not None:
                 for constraint in res.rdkit_bounds_constraints:
                     rdkit_bounds_constraint_data.append(  # noqa: PERF401
@@ -1387,8 +1408,8 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                             ),
                             constraint.is_bond,
                             constraint.is_angle,
-                            constraint.upper_bound,
-                            constraint.lower_bound,
+                            constraint.upper_bound, # ligand residue 단위에서만 사용됨
+                            constraint.lower_bound, # ligand residue 단위에서만 사용됨
                         )
                     )
             if res.chiral_atom_constraints is not None:
@@ -1446,7 +1467,10 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                         )
                     )
 
-            for bond in res.bonds:
+            # [TODO] bond_data for polymer
+            # TO do implementation!
+            
+            for bond in res.bonds: # polymer 단위에서는 안 됨, atom-level
                 atom_1 = atom_idx + bond.atom_1
                 atom_2 = atom_idx + bond.atom_2
                 bond_data.append(
@@ -1485,13 +1509,61 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
 
             res_idx += 1
 
+    # Generate template-based constraints before parsing explicit constraints (code modification)
+    logger.info('Generate template-based constraints') 
+    template_constraints = []
+    template_info_by_chain = {}  # Store template info for each chain
+    
+    print('[INFO ] Collect template information from schema (yaml config)')
+    for item in schema.get("sequences", []):
+        entity_type = next(iter(item.keys())).lower()
+        if entity_type == "protein" and "template" in item[entity_type]:            
+            template_info = item[entity_type]["template"]
+            chain_ids = item[entity_type]["id"]
+            print(f' INFO: there is template info for {chain_ids}')
+            
+            if isinstance(chain_ids, str):
+                chain_ids = [chain_ids]
+            
+            for chain_id in chain_ids:
+                template_info_by_chain[chain_id] = {
+                    "structure_path": template_info["structure"],
+                    "chain_id": template_info["chain_id"],
+                    "sequence": item[entity_type]["sequence"]
+                }
+    
+    # Generate template constraints for each chain with template info
+    if template_info_by_chain:
+        try:
+            generator = TemplateConstraintGenerator()
+            
+            for chain_id, info in template_info_by_chain.items():
+                print(f"[INFO ] Generating template constraints for chain {chain_id}")
+                constraints = generator.generate_template_constraints(
+                    query_sequence=info["sequence"],
+                    template_structure=info["structure_path"],
+                    template_chain_id=info["chain_id"],
+                    query_chain_id=chain_id
+                )
+                template_constraints.extend(constraints)                
+        except Exception as e:
+            print(f"[WARNING] Failed to generate template constraints: {e}")    
+    
+    ## Combine template constraints with explicit constraints (code modification)
+    logger.info('Parse constraints')
     # Parse constraints
     connections = []
     pocket_constraints = []
     contact_constraints = []
-    constraints = schema.get("constraints", [])
-    for constraint in constraints:
-        if "bond" in constraint:
+    
+    # code modification 
+    min_distances = []
+    nmr_distances = []
+    
+    # constraints = schema.get("constraints", [])
+    all_constraints = template_constraints + schema.get("constraints", [])
+    for constraint in all_constraints:
+        if "bond" in constraint: # connected bond constraints (e.g. disulfide bonds for protein or covalent bonds for polymer-ligand)
             if "atom1" not in constraint["bond"] or "atom2" not in constraint["bond"]:
                 msg = f"Bond constraint was not properly specified"
                 raise ValueError(msg)
@@ -1501,8 +1573,13 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed
             c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed
             connections.append((c1, c2, r1, r2, a1, a2))
-        elif "min_distance" in constraint:
-            if "atom1" not in constraint["min_distance"] or "atom2" not in constraint["min_distance"]:
+        
+        ## Code modification - add min_distance and nmr_distance constraints
+        elif "min_distance" in constraint: # minimum distance constraints btw two atoms (e.g. distance between two atoms)
+            if (
+                "atom1" not in constraint["min_distance"] or "atom2" not in constraint["min_distance"]
+                or "distance" not in constraint["min_distance"]
+            ):
                 msg = "Min distance constraint was not properly specified"
                 raise ValueError(msg)
 
@@ -1515,6 +1592,8 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             c1, r1, a1 = atom_idx_map[(c1, r1 - 1, a1)]  # 1-indexed to 0-indexed
             c2, r2, a2 = atom_idx_map[(c2, r2 - 1, a2)]  # 1-indexed to 0-indexed            
             min_distances.append((c1, c2, r1, r2, a1, a2, distance))
+
+        
         elif "nmr_distance" in constraint:
             if (
                 "atom1" not in constraint["nmr_distance"] 
@@ -1603,7 +1682,18 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                 # Polymer chains are indexed by residue index
                 token1 = (chain_to_idx[chain_name1], residue_index_or_atom_name1 - 1)
 
-            pocket_constraints.append((binder, contacts, max_distance))
+            chain_name2, residue_index_or_atom_name2 = constraint["contact"]["token2"]
+            if chains[chain_name2].type == const.chain_type_ids["NONPOLYMER"]:
+                # Non-polymer chains are indexed by atom name
+                _, _, atom_idx = atom_idx_map[
+                    (chain_name2, 0, residue_index_or_atom_name2)
+                ]
+                token2 = (chain_to_idx[chain_name2], atom_idx)
+            else:
+                # Polymer chains are indexed by residue index
+                token2 = (chain_to_idx[chain_name2], residue_index_or_atom_name2 - 1)
+
+            contact_constraints.append((token1, token2, max_distance))
         else:
             msg = f"Invalid constraint: {constraint}"
             raise ValueError(msg)
@@ -1734,11 +1824,8 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
         planar_ring_6_constraint_data, dtype=PlanarRing6Constraint
     )
     
-    # code modification - convert constraint lists to numpy arrays
-    min_distances = np.array(min_distances, dtype=MinDistance)
-    nmr_distances = np.array(nmr_distances, dtype=NMRDistance)
-
     if boltz_2:
+        print(f"[INFO ] Boltz-2 is used")
         atom_data = [(a[0], a[3], a[5], 0.0, 1.0) for a in atom_data]
         connections = [(*c, const.bond_type_ids["COVALENT"]) for c in connections]
         bond_data = bond_data + connections
@@ -1747,6 +1834,11 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
         coords = [(x,) for x in atoms["coords"]]
         coords = np.array(coords, Coords)
         ensemble = np.array([(0, len(coords))], dtype=Ensemble)
+        
+        # Code modification - Include constraint arrays in V2 with safe array processing
+        min_distances_v2 = np.array(min_distances, dtype=MinDistance) if len(min_distances) > 0 else None
+        nmr_distances_v2 = np.array(nmr_distances, dtype=NMRDistance) if len(nmr_distances) > 0 else None
+        
         data = StructureV2(
             atoms=atoms,
             bonds=bonds,
@@ -1756,6 +1848,9 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
             mask=mask,
             coords=coords,
             ensemble=ensemble,
+            # code modification - add constraint fields for V2
+            min_distances=min_distances_v2,
+            nmr_distances=nmr_distances_v2,
         )
     else:
         bond_data = [(b[4], b[5], b[6]) for b in bond_data]
@@ -1763,14 +1858,19 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
         atoms = np.array(atom_data, dtype=Atom)
         bonds = np.array(bond_data, dtype=Bond)
         connections = np.array(connections, dtype=Connection)
+        
+        # Code modification - Include constraint arrays in V1 with safe array processing
+        min_distances_v1 = np.array(min_distances, dtype=MinDistance) if len(min_distances) > 0 else None
+        nmr_distances_v1 = np.array(nmr_distances, dtype=NMRDistance) if len(nmr_distances) > 0 else None
+        
         data = Structure(
             atoms=atoms,
             bonds=bonds,
             residues=residues,
             chains=chains,
             connections=connections,
-            min_distances=min_distances,
-            nmr_distances=nmr_distances,
+            min_distances=min_distances_v1,
+            nmr_distances=nmr_distances_v1,
             interfaces=interfaces,
             mask=mask,
         )
@@ -1791,7 +1891,15 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
         )
         chain_infos.append(chain_info)
 
-    options = InferenceOptions(pocket_constraints=pocket_constraints)
+    # Code modification 
+    # Create inference options with proper constraint handling
+    if boltz_2:
+        options = InferenceOptions(pocket_constraints=pocket_constraints)
+    else:
+        # For boltz-1 compatibility, convert to old format if needed
+        binders = [pc[0] for pc in pocket_constraints] if pocket_constraints else []
+        pocket = [contact for pc in pocket_constraints for contact in pc[1]] if pocket_constraints else None
+        options = InferenceOptions(pocket_constraints=pocket_constraints)
     record = Record(
         id=name,
         structure=struct_info,

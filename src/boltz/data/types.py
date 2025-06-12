@@ -155,6 +155,15 @@ Interface = [
     ("chain_2", np.dtype("i4")),
 ]
 
+Coords = [
+    ("coords", np.dtype("3f4")),
+]
+
+Ensemble = [
+    ("atom_coord_idx", np.dtype("i4")),
+    ("atom_num", np.dtype("i4")),
+]
+
 # ==================== #
 #  Code Modification   #
 # ==================== #
@@ -178,15 +187,6 @@ NMRDistance = [
     ("lower_bound", np.dtype("f4")),
     ("upper_bound", np.dtype("f4")),
     ("weight", np.dtype("f4")),
-]
-
-Coords = [
-    ("coords", np.dtype("3f4")),
-]
-
-Ensemble = [
-    ("atom_coord_idx", np.dtype("i4")),
-    ("atom_num", np.dtype("i4")),
 ]
 
 
@@ -332,7 +332,8 @@ class Structure(NumpySerializable):
                 new_connection["atom_2"] = atom_map[atom_2]
                 connections.append(new_connection)
 
-        # Update min_distances constraints
+        # Code modification - Update min_distances constraints
+
         min_distances = []
         for min_dist in self.min_distances:
             chain_1 = min_dist["chain_1"]
@@ -351,7 +352,8 @@ class Structure(NumpySerializable):
                 new_min_dist["atom_2"] = atom_map[atom_2]
                 min_distances.append(new_min_dist)
 
-        # Update nmr_distances constraints
+        # Code modification - Update nmr_distances constraints
+
         nmr_distances = []
         for nmr_dist in self.nmr_distances:
             chain_1 = nmr_dist["chain_1"]
@@ -404,6 +406,9 @@ class StructureV2(NumpySerializable):
     coords: np.ndarray
     ensemble: np.ndarray
     pocket: Optional[np.ndarray] = None
+    # Code modification - add constraint fields for V2 compatibility
+    min_distances: Optional[np.ndarray] = None
+    nmr_distances: Optional[np.ndarray] = None
 
     def remove_invalid_chains(self) -> "StructureV2":  # noqa: PLR0915
         """Remove invalid chains.
@@ -493,6 +498,60 @@ class StructureV2(NumpySerializable):
                 new_bond["atom_2"] = atom_map[atom_2]
                 bonds.append(new_bond)
 
+        # Code modification - Update min_distances constraints for V2
+        min_distances = []
+        if self.min_distances is not None:
+            try:
+                # Safely check if it's iterable and has length
+                min_dist_array = np.asarray(self.min_distances)
+                if min_dist_array.ndim > 0 and len(min_dist_array) > 0:
+                    for min_dist in min_dist_array:
+                        chain_1 = min_dist["chain_1"]
+                        chain_2 = min_dist["chain_2"]
+                        res_1 = min_dist["res_1"]
+                        res_2 = min_dist["res_2"]
+                        atom_1 = min_dist["atom_1"]
+                        atom_2 = min_dist["atom_2"]
+                        if (atom_1 in atom_map) and (atom_2 in atom_map):
+                            new_min_dist = min_dist.copy()
+                            new_min_dist["chain_1"] = chain_map[chain_1]
+                            new_min_dist["chain_2"] = chain_map[chain_2]
+                            new_min_dist["res_1"] = res_map[res_1]
+                            new_min_dist["res_2"] = res_map[res_2]
+                            new_min_dist["atom_1"] = atom_map[atom_1]
+                            new_min_dist["atom_2"] = atom_map[atom_2]
+                            min_distances.append(new_min_dist)
+            except Exception:
+                # Silently handle any array processing errors
+                pass
+
+        # Code modification - Update nmr_distances constraints for V2
+        nmr_distances = []
+        if self.nmr_distances is not None:
+            try:
+                # Safely check if it's iterable and has length
+                nmr_dist_array = np.asarray(self.nmr_distances)
+                if nmr_dist_array.ndim > 0 and len(nmr_dist_array) > 0:
+                    for nmr_dist in nmr_dist_array:
+                        chain_1 = nmr_dist["chain_1"]
+                        chain_2 = nmr_dist["chain_2"]
+                        res_1 = nmr_dist["res_1"]
+                        res_2 = nmr_dist["res_2"]
+                        atom_1 = nmr_dist["atom_1"]
+                        atom_2 = nmr_dist["atom_2"]
+                        if (atom_1 in atom_map) and (atom_2 in atom_map):
+                            new_nmr_dist = nmr_dist.copy()
+                            new_nmr_dist["chain_1"] = chain_map[chain_1]
+                            new_nmr_dist["chain_2"] = chain_map[chain_2]
+                            new_nmr_dist["res_1"] = res_map[res_1]
+                            new_nmr_dist["res_2"] = res_map[res_2]
+                            new_nmr_dist["atom_1"] = atom_map[atom_1]
+                            new_nmr_dist["atom_2"] = atom_map[atom_2]
+                            nmr_distances.append(new_nmr_dist)
+            except Exception:
+                # Silently handle any array processing errors
+                pass
+
         # Create arrays
         bonds = np.array(bonds, dtype=BondV2)
         interfaces = np.array([], dtype=Interface)
@@ -500,6 +559,10 @@ class StructureV2(NumpySerializable):
         coords = [(x,) for x in atoms["coords"]]
         coords = np.array(coords, dtype=Coords)
         ensemble = np.array([(0, len(coords))], dtype=Ensemble)
+        
+        # Code modification - Create constraint arrays for V2
+        min_distances_array = np.array(min_distances, dtype=MinDistance) if min_distances else None
+        nmr_distances_array = np.array(nmr_distances, dtype=NMRDistance) if nmr_distances else None
 
         return StructureV2(
             atoms=atoms,
@@ -510,6 +573,8 @@ class StructureV2(NumpySerializable):
             mask=mask,
             coords=coords,
             ensemble=ensemble,
+            min_distances=min_distances_array,
+            nmr_distances=nmr_distances_array,
         )
 
 
@@ -708,7 +773,7 @@ class Target:
     """Target datatype."""
 
     record: Record
-    structure: Structure
+    structure: Union[Structure, StructureV2]  # Code modification - Support both V1 and V2
     sequences: Optional[dict[str, str]] = None
     residue_constraints: Optional[ResidueConstraints] = None
     templates: Optional[dict[str, StructureV2]] = None

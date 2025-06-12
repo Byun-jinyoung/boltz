@@ -254,6 +254,161 @@ class ConnectionsPotential(FlatBottomPotential, DistancePotential):
         return pair_index, (k, lower_bounds, upper_bounds), None
 
 
+class MinDistancePotential(FlatBottomPotential, DistancePotential):
+    """
+    Minimum distance constraints between atom pairs.
+    
+    This potential enforces minimum distance constraints by applying
+    a flat-bottom potential that penalizes distances below the specified
+    minimum distance threshold.
+    """
+    
+    def compute_args(self, feats, parameters):
+        pair_index = feats["min_distance_atom_index"][0]
+        min_distance_values = feats["min_distance_values"][0]
+        lower_bounds = min_distance_values 
+        upper_bounds = None
+        k = torch.ones_like(lower_bounds) * 50
+
+        return pair_index, (k, lower_bounds, upper_bounds), None
+
+
+class NMRDistancePotential(FlatBottomPotential, DistancePotential):
+    """
+    NMR-derived distance constraints with both upper and lower bounds.
+    
+    This potential applies distance constraints derived from NMR experiments,
+    which typically provide both minimum and maximum distance bounds between
+    atom pairs based on NOE data. Unlike MinDistancePotential which only
+    enforces lower bounds, this potential can enforce both bounds simultaneously.
+    """
+    
+    def __init__(self, parameters):
+        super().__init__(parameters)
+        self.call_count = 0
+        self.gradient_call_count = 0
+        self.debug_enabled = True  # Set to False to disable debugging
+        
+        if self.debug_enabled:
+            print(f"[NMRDistancePotential] Initialized with parameters:")
+            for key, value in parameters.items():
+                print(f"  {key}: {value}")
+    
+    def _log_debug(self, message):
+        """Helper method for debug logging."""
+        if self.debug_enabled:
+            print(f"[NMRDistancePotential] {message}")
+    
+    def enable_debug(self):
+        """Enable debug logging."""
+        self.debug_enabled = True
+        self._log_debug("Debug logging enabled")
+    
+    def disable_debug(self):
+        """Disable debug logging."""
+        if self.debug_enabled:
+            self._log_debug("Debug logging disabled")
+        self.debug_enabled = False
+    
+    def get_stats(self):
+        """Get current statistics."""
+        return {
+            "compute_calls": self.call_count,
+            "gradient_calls": self.gradient_call_count,
+            "debug_enabled": self.debug_enabled
+        }
+    
+    def compute(self, coords, feats, parameters):
+        """Override compute to add debugging."""
+        if self.debug_enabled:
+            self.call_count += 1
+            self._log_debug(f"compute() called #{self.call_count}")
+            self._log_debug(f"  coords shape: {coords.shape}")
+            self._log_debug(f"  batch size: {coords.shape[0]}, atoms: {coords.shape[1]}")
+        
+        result = super().compute(coords, feats, parameters)
+        
+        if self.debug_enabled and result is not None:
+            self._log_debug(f"  Energy computed: mean={result.mean().item():.2f}, "
+                          f"min={result.min().item():.2f}, max={result.max().item():.2f}")
+        
+        return result
+    
+    def compute_gradient(self, coords, feats, parameters):
+        """Override compute_gradient to add debugging."""
+        if self.debug_enabled:
+            self.gradient_call_count += 1
+            if self.gradient_call_count % 10 == 1:  # Log every 10th gradient call to reduce spam
+                self._log_debug(f"compute_gradient() called #{self.gradient_call_count}")
+        
+        result = super().compute_gradient(coords, feats, parameters)
+        
+        if self.debug_enabled and result is not None and self.gradient_call_count % 10 == 1:
+            grad_norm = torch.norm(result).item()
+            self._log_debug(f"  Gradient norm: {grad_norm:.2f}")
+        
+        return result
+    
+
+    
+    def compute_args(self, feats, parameters):
+        """
+        Compute arguments for NMR distance potential.
+        
+        Parameters
+        ----------
+        feats : dict
+            Feature dictionary containing NMR distance constraints
+        parameters : dict
+            Potential parameters including buffers and weights
+            
+        Returns
+        -------
+        tuple
+            (pair_index, (k, lower_bounds, upper_bounds), None)
+        """
+        # Check if NMR distance features exist
+        if "nmr_distance_atom_index" not in feats:
+            if self.debug_enabled:
+                self._log_debug("No NMR distance constraints found in features")
+            # Return empty tensors if no constraints are available
+            device = next(iter(feats.values())).device if feats else 'cpu'
+            return torch.empty((2, 0), device=device), (torch.empty(0, device=device), torch.empty(0, device=device), torch.empty(0, device=device)), None
+            
+        pair_index = feats["nmr_distance_atom_index"][0]
+        lower_bounds = feats["nmr_distance_lower_bounds"][0].clone()
+        upper_bounds = feats["nmr_distance_upper_bounds"][0].clone()
+        weights = feats["nmr_distance_weights"][0]
+        
+        if self.debug_enabled:
+            num_constraints = pair_index.shape[1]
+            self._log_debug(f"Processing {num_constraints} NMR distance constraints")
+            self._log_debug(f"  Lower bounds: {lower_bounds.min().item():.3f} - {lower_bounds.max().item():.3f} Å")
+            self._log_debug(f"  Upper bounds: {upper_bounds.min().item():.3f} - {upper_bounds.max().item():.3f} Å")
+            self._log_debug(f"  Weights: {weights.min().item():.3f} - {weights.max().item():.3f}")
+        
+        # Apply buffer to bounds for soft constraints
+        # Lower bounds are reduced by buffer percentage to allow some flexibility
+        lower_bounds = lower_bounds * (1.0 - parameters["lower_buffer"])
+        
+        # Upper bounds are increased by buffer percentage, but handle infinite values
+        finite_mask = torch.isfinite(upper_bounds)
+        upper_bounds[finite_mask] = upper_bounds[finite_mask] * (1.0 + parameters["upper_buffer"])
+        
+        # Apply weights as force constants
+        k = weights * parameters["base_force_constant"]
+        
+        if self.debug_enabled:
+            self._log_debug(f"  Applied buffers: lower={parameters['lower_buffer']:.3f}, upper={parameters['upper_buffer']:.3f}")
+            self._log_debug(f"  Final force constants: {k.min().item():.3f} - {k.max().item():.3f}")
+            self._log_debug(f"  Buffered lower bounds: {lower_bounds.min().item():.3f} - {lower_bounds.max().item():.3f} Å")
+            finite_upper = upper_bounds[finite_mask]
+            if len(finite_upper) > 0:
+                self._log_debug(f"  Buffered upper bounds: {finite_upper.min().item():.3f} - {finite_upper.max().item():.3f} Å")
+        
+        return pair_index, (k, lower_bounds, upper_bounds), None
+
+
 class VDWOverlapPotential(FlatBottomPotential, DistancePotential):
     def compute_args(self, feats, parameters):
         atom_chain_id = (
@@ -444,10 +599,36 @@ def get_potentials():
                 "buffer": 2.0,
             }
         ),
+        # ==================== #
+        #  Code Modification   #
+        # ==================== #
+        # MinDistancePotential( 
+        #     parameters={
+        #         "guidance_interval": 1,
+        #         "guidance_weight": 0.15,
+        #         "resampling_weight": 10,
+        #         "buffer": 0.5,
+        #     }
+        # ),
+        NMRDistancePotential( 
+            parameters={
+                "guidance_interval": 3,
+                "guidance_weight": 0.1,
+                # "guidance_weight": ExponentialInterpolation(
+                #     start=0.5,
+                #     end=0.75,
+                #     alpha=-5.0
+                # ),                
+                "resampling_weight": 1.0,
+                "lower_buffer": 0.05,
+                "upper_buffer": 0.05,
+                "base_force_constant": 1.0,
+            }
+        ),
         PoseBustersPotential(
             parameters={
                 "guidance_interval": 1,
-                "guidance_weight": 0.05,
+                "guidance_weight": 1,
                 "resampling_weight": 0.1,
                 "bond_buffer": 0.20,
                 "angle_buffer": 0.20,

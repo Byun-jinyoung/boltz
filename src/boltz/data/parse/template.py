@@ -202,122 +202,87 @@ class TemplateConstraintGenerator:
         Returns
         -------
         List[Dict[str, Any]]
-            List of constraint dictionaries compatible with Boltz schema
+            List of constraint dictionaries compatible with boltz schema
         """
         try:
-            # Validate constraint type
-            if constraint_type not in ["min_distance", "nmr_distance"]:
-                raise ValueError(f"Invalid constraint_type: {constraint_type}. Must be 'min_distance' or 'nmr_distance'")
-            
-            # Perform sequence alignment
-            aligned_template, aligned_query, mapping, stats = self.mapper.map_sequences(
+            # Map sequences
+            aligned_struct, aligned_given, mapping, stats = self.mapper.map_sequences(
                 template_structure, template_chain_id, query_sequence
             )
             
-            # Check sequence identity
-            #seq_identity = self._calculate_sequence_identity(aligned_template, aligned_query)
-            seq_identity = calculate_sequence_identity(aligned_template, aligned_query)
+            # Calculate sequence identity
+            seq_identity = calculate_sequence_identity(aligned_struct, aligned_given)
+            print(f"  INFO: Sequence identity: {seq_identity:.3f}")
+            
             if seq_identity < self.min_sequence_identity:
                 warnings.warn(
-                    f"Low sequence identity ({seq_identity:.2f}). " f"Constraints may not be reliable."
+                    f"Low sequence identity ({seq_identity:.3f}) "
+                    f"may lead to unreliable constraints"
                 )
             
-            # Extract Cb coordinates from template
+            # Extract CB coordinates from template
             cb_coords = self._extract_cb_coordinates(template_structure, template_chain_id)
             if not cb_coords:
-                raise ValueError("No Cb coordinates extracted from template. Is it only backbone structure?")
+                warnings.warn("No CB coordinates extracted from template")
+                return []
             
             # Compute distance map
             distance_map = self._compute_distance_map(cb_coords)
+            if not distance_map:
+                warnings.warn("No valid distances found in template")
+                return []
             
-            # Generate constraints based on alignment mapping
+            # Generate constraints based on mapping
             constraints = []
+            mapping_dict = dict(mapping)
             
-            # Create mapping dictionaries for efficient lookup
-            template_to_query = {t_idx: q_idx for q_idx, t_idx in mapping}
-            
-            for (temp_i, temp_j), distance in distance_map.items():
-                # Find corresponding query residues for template residue pair
-                if temp_i in template_to_query and temp_j in template_to_query:
-                    query_i = template_to_query[temp_i]
-                    query_j = template_to_query[temp_j]
-                    
-                    # Avoid very close residues (sequence separation)
-                    #if abs(query_i - query_j) > 10:  # Skip nearby residues
-                    #if abs(query_i - query_j) >= 4:                     
-                    # if abs(query_i - query_j) <= 20:  # consider only nearby residues
-                    if 10 <= abs(query_i - query_j) <= 50:  # consider only nearby residues
-                        # Use CA for Glycine, CB for other residues
-                        atom1_name = "CA" if query_sequence[query_i] == "G" else "CB"
-                        atom2_name = "CA" if query_sequence[query_j] == "G" else "CB"
-
-                        
-                        # Generate constraint based on type
-                        if constraint_type == "min_distance":
-                            constraint = {
-                                constraint_type: {
-                                    "atom1": [query_chain_id, query_i + 1, atom1_name],  # 1-indexed
-                                    "atom2": [query_chain_id, query_j + 1, atom2_name],  # 1-indexed
-                                    "distance": round(float(distance), 3)
-                                }
+            for (template_idx1, template_idx2), distance in distance_map.items():
+                # Find corresponding query indices
+                query_idx1 = None
+                query_idx2 = None
+                
+                for query_idx, template_idx in mapping_dict.items():
+                    if template_idx == template_idx1:
+                        query_idx1 = query_idx
+                    elif template_idx == template_idx2:
+                        query_idx2 = query_idx
+                
+                if query_idx1 is not None and query_idx2 is not None:
+                    # Generate constraint based on type
+                    if constraint_type == "min_distance":
+                        constraint = {
+                            "min_distance": {
+                                "atom1": [query_chain_id, query_idx1 + 1, "CB"],  # 1-indexed
+                                "atom2": [query_chain_id, query_idx2 + 1, "CB"],  # 1-indexed
+                                "distance": float(distance)
                             }
-                        elif constraint_type == "nmr_distance":
-                            # Calculate bounds with buffer
-                            lower_bound = distance * (1.0 - distance_buffer)
-                            upper_bound = distance * (1.0 + distance_buffer)
-                            
-                            # Calculate weight based on sequence identity and distance
-                            weight = base_weight
-                            # if sequence_identity_weight: (forge later)
-                            #     # Scale weight by sequence identity (higher identity = higher weight)
-                            #     weight *= seq_identity
-                            #     # Scale weight by inverse distance (closer pairs = higher weight)
-                            #     # Normalize by typical protein distance range (5-50 Å)
-                            #     distance_factor = max(0.1, (50.0 - min(distance, 50.0)) / 45.0)                                
-                            #     weight *= distance_factor
-                            #print(lower_bound, upper_bound, weight)                            
-                            
-                            # NMR distance format with bounds and weight                            
-                            constraint = {
-                                constraint_type: {
-                                    "atom1": [query_chain_id, query_i + 1, atom1_name],  # 1-indexed
-                                    "atom2": [query_chain_id, query_j + 1, atom2_name],  # 1-indexed
-                                    "lower_bound": round(float(lower_bound), 3),
-                                    "upper_bound": round(float(upper_bound), 3),
-                                    "weight": round(float(weight), 3)
-                                }
-                            }
+                        }
+                    elif constraint_type == "nmr_distance":
+                        # Calculate bounds with buffer
+                        lower_bound = max(0.0, distance * (1 - distance_buffer))
+                        upper_bound = distance * (1 + distance_buffer)
                         
-                        constraints.append(constraint)
-            
-            # Remove duplicate constraints
-            unique_constraints = []
-            seen_pairs = set()
-            
-            for constraint in constraints:
-                if constraint_type in constraint:
-                    atom1_info = tuple(constraint[constraint_type]["atom1"])
-                    atom2_info = tuple(constraint[constraint_type]["atom2"])
+                        # Calculate weight
+                        weight = base_weight
+                        if sequence_identity_weight:
+                            weight *= seq_identity
+                        
+                        constraint = {
+                            "nmr_distance": {
+                                "atom1": [query_chain_id, query_idx1 + 1, "CB"],  # 1-indexed
+                                "atom2": [query_chain_id, query_idx2 + 1, "CB"],  # 1-indexed
+                                "lower_bound": float(lower_bound),
+                                "upper_bound": float(upper_bound),
+                                "weight": float(weight)
+                            }
+                        }
+                    else:
+                        raise ValueError(f"Unknown constraint type: {constraint_type}")
                     
-                    # Ensure consistent ordering
-                    if atom1_info > atom2_info:
-                        atom1_info, atom2_info = atom2_info, atom1_info
-                        constraint[constraint_type]["atom1"] = list(atom1_info)
-                        constraint[constraint_type]["atom2"] = list(atom2_info)
-                    
-                    pair_key = (atom1_info, atom2_info)
-                    if pair_key not in seen_pairs:
-                        seen_pairs.add(pair_key)
-                        unique_constraints.append(constraint)
+                    constraints.append(constraint)
             
-            print(f"  INFO: generated {len(unique_constraints)} template-based {constraint_type} constraints")
-            print(f"  INFO: sequence identity: {seq_identity:.3f}")
-            print(f"  INFO: alignment length: {stats.get('aligned_length', 0)}")
-            if constraint_type == "nmr_distance":
-                print(f"  INFO: distance buffer: {distance_buffer:.1%}")
-                print(f"  INFO: base weight: {base_weight}")
-            
-            return unique_constraints
+            print(f"  INFO: Generated {len(constraints)} template constraints")
+            return constraints
             
         except Exception as e:
             warnings.warn(f"Failed to generate template constraints: {e}")
@@ -329,68 +294,35 @@ class TemplateConstraintGenerator:
         template_info: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Add template-based constraints to Boltz schema data.
+        Generate constraints and integrate into boltz schema.
         
         Parameters
         ----------
         schema_data : Dict[str, Any]
-            Original Boltz schema data
+            Original boltz schema data
         template_info : Dict[str, Any]
-            Template information containing:
-            - structure_path: path to template structure
-            - chain_id: template chain identifier
-            - target_chain_id: target chain identifier
-            - constraint_type: type of constraint ("min_distance" or "nmr_distance", optional)
-            - distance_buffer: buffer percentage for NMR bounds (optional)
-            - base_weight: base weight for NMR constraints (optional)
-            - sequence_identity_weight: whether to scale weight by sequence identity (optional)
+            Template information
             
         Returns
         -------
         Dict[str, Any]
-            Modified schema data with template constraints added
+            Schema data with added template constraints
         """
-        # Find target protein sequence
-        target_sequence = None
-        target_chain_id = template_info.get("target_chain_id", "A")
-        
-        for seq_entry in schema_data.get("sequences", []):
-            if "protein" in seq_entry:
-                protein_data = seq_entry["protein"]
-                if protein_data["id"] == target_chain_id:
-                    target_sequence = protein_data["sequence"]
-                    break
-        
-        if target_sequence is None:
-            warnings.warn(f"Target protein chain {target_chain_id} not found")
-            return schema_data
-        
-        # Extract constraint generation parameters
-        constraint_kwargs = {
-            "constraint_type": template_info.get("constraint_type", "nmr_distance"),
-            "distance_buffer": template_info.get("distance_buffer", 0.1),
-            "base_weight": template_info.get("base_weight", 1.0),
-            "sequence_identity_weight": template_info.get("sequence_identity_weight", True)
-        }
-        
-        # Generate template constraints
-        template_constraints = self.generate_template_constraints(
-            query_sequence=target_sequence,
-            template_structure=template_info["structure_path"],
-            template_chain_id=template_info["chain_id"],
-            query_chain_id=target_chain_id,
-            **constraint_kwargs
-        )
-        
-        # Add constraints to schema
-        if template_constraints:
+        try:
+            # Extract template constraints
+            constraints = self.generate_template_constraints(**template_info)
+            
+            # Add to schema
             if "constraints" not in schema_data:
                 schema_data["constraints"] = []
             
-            schema_data["constraints"].extend(template_constraints)
-        
-        return schema_data
-
+            schema_data["constraints"].extend(constraints)
+            
+            return schema_data
+            
+        except Exception as e:
+            warnings.warn(f"Failed to integrate template constraints: {e}")
+            return schema_data
 
 
 def apply_template_constraints(
@@ -405,40 +337,55 @@ def apply_template_constraints(
     **kwargs
 ) -> Dict[str, Any]:
     """
-    Convenience function to apply template-based constraints to schema data.
+    Convenience function to apply template constraints to schema.
     
     Parameters
     ----------
     schema_data : Dict[str, Any]
-        Original Boltz schema data
+        Boltz schema data
     template_structure : str
-        Path to template structure file
+        Path to template structure
     template_chain_id : str
-        Template chain identifier
+        Template chain ID
     target_chain_id : str
-        Target chain identifier (default: "A")
+        Target chain ID
     constraint_type : str
-        Type of constraint to generate ("min_distance" or "nmr_distance", default: "nmr_distance")
+        Constraint type
     distance_buffer : float
-        Buffer percentage for NMR bounds (default: 0.1 = 10%)
+        Distance buffer for NMR constraints
     base_weight : float
-        Base weight for NMR constraints (default: 1.0)
+        Base weight for constraints
     sequence_identity_weight : bool
-        Whether to scale weight by sequence identity (default: True)
-    **kwargs
-        Additional parameters for TemplateConstraintGenerator
+        Whether to use sequence identity weighting
         
     Returns
     -------
     Dict[str, Any]
-        Modified schema data with template constraints
+        Updated schema data
     """
-    generator = TemplateConstraintGenerator(**kwargs)
+    # Find target sequence
+    target_sequence = None
+    for item in schema_data.get("sequences", []):
+        entity_type = next(iter(item.keys())).lower()
+        if entity_type == "protein":
+            chain_ids = item[entity_type]["id"]
+            if isinstance(chain_ids, str):
+                chain_ids = [chain_ids]
+            if target_chain_id in chain_ids:
+                target_sequence = item[entity_type]["sequence"]
+                break
     
+    if not target_sequence:
+        warnings.warn(f"Could not find sequence for chain {target_chain_id}")
+        return schema_data
+    
+    # Generate constraints
+    generator = TemplateConstraintGenerator(**kwargs)
     template_info = {
-        "structure_path": template_structure,
-        "chain_id": template_chain_id,
-        "target_chain_id": target_chain_id,
+        "query_sequence": target_sequence,
+        "template_structure": template_structure,
+        "template_chain_id": template_chain_id,
+        "query_chain_id": target_chain_id,
         "constraint_type": constraint_type,
         "distance_buffer": distance_buffer,
         "base_weight": base_weight,

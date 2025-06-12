@@ -32,6 +32,13 @@ from boltz.data.write.writer import BoltzAffinityWriter, BoltzWriter
 from boltz.model.models.boltz1 import Boltz1
 from boltz.model.models.boltz2 import Boltz2
 
+# ========================== #
+# -- My Code Modification -- #
+# ========================== #
+from boltz.logger_config import MyLogger
+
+logger = MyLogger
+
 CCD_URL = "https://huggingface.co/boltz-community/boltz-1/resolve/main/ccd.pkl"
 MOL_URL = "https://huggingface.co/boltz-community/boltz-2/resolve/main/mols.tar"
 
@@ -664,6 +671,7 @@ def process_inputs(
             updated_manifest.dump(out_dir / "processed" / "manifest.json")
             return updated_manifest
 
+    click.echo("Creating output directories... (msa, records, structures, msa, constraints, templates, mols, predictions)")
     # Create output directories
     msa_dir = out_dir / "msa"
     records_dir = out_dir / "processed" / "records"
@@ -684,10 +692,12 @@ def process_inputs(
     processed_mols_dir.mkdir(parents=True, exist_ok=True)
     predictions_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load CCD
+    click.echo("Loading CCD...")
     if boltz2:
+        click.echo(f'  INFO: Boltz2 loads molecules with canonicals tokens')
         ccd = load_canonicals(mol_dir)
     else:
+        click.echo(f'  INFO: Boltz1 loads molecules w/o canonicals tokens')
         with ccd_path.open("rb") as file:
             ccd = pickle.load(file)  # noqa: S301
 
@@ -1023,6 +1033,7 @@ def predict(  # noqa: C901, PLR0915, PLR0912
     # Process inputs
     ccd_path = cache / "ccd.pkl"
     mol_dir = cache / "mols"
+    logger.info('Load fasta/yaml config file and read/generate MSA with "process_inputs" function.')
     manifest: Manifest = process_inputs(
         data=data,
         out_dir=out_dir,
@@ -1124,6 +1135,7 @@ def predict(  # noqa: C901, PLR0915, PLR0912
         click.echo(msg)
 
         # Create data module
+        logger.info('Load processed data and crate data module (Dataset, DataLoader)')
         if model == "boltz2":
             data_module = Boltz2InferenceDataModule(
                 manifest=processed.manifest,

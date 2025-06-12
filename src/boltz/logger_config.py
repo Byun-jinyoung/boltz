@@ -2,7 +2,7 @@ import os, sys
 """Logging configuration utilities for the Boltz package."""
 
 import logging
-from typing import ClassVar
+from typing import ClassVar, Dict
 
 from colorama import Fore, Style
 
@@ -11,7 +11,7 @@ class MyCustomFormatter(logging.Formatter):
     """Formatter that adds colours and emojis to log level names."""
 
     # log level emoji
-    EMOJIS: ClassVar[dict[str, str]] = {
+    EMOJIS: ClassVar[Dict[str, str]] = {
         "DEBUG": "🔍 ",
         "INFO": "ℹ️ ",
         "WARNING": "⚠️ ",
@@ -19,7 +19,7 @@ class MyCustomFormatter(logging.Formatter):
         "CRITICAL": "🔥 ",
     }
     # log level color
-    COLORS: ClassVar[dict[int, str]] = {
+    COLORS: ClassVar[Dict[int, str]] = {
         logging.DEBUG: Fore.CYAN,
         logging.INFO: Fore.GREEN,
         logging.WARNING: Fore.YELLOW,
